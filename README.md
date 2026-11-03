@@ -1,11 +1,8 @@
 # tx-scanner
 
-A small Python script that shows the current balance of an address on BNB Smart Chain (BSC / BEP20). It can show:
+A small Python tool that shows wallet balances on a blockchain. **BNB Smart Chain (BSC / BEP20)** is supported today, and the code is set up so Ethereum, Tron and other chains can be added.
 
-- the **BNB** balance of an address, or
-- the balance of a single **BEP20 token** (USDT, BUSD, CAKE, ...) held by an address.
-
-You don't need an API key or any extra packages. The script reads directly from the public BSC node at `https://bsc-dataseed.bnbchain.org`.
+It shows the native coin (BNB) and any BEP20 tokens you list, such as USDT and USDC. You don't need an API key or extra packages; it reads directly from a public node.
 
 ## Requirements
 
@@ -14,62 +11,107 @@ You don't need an API key or any extra packages. The script reads directly from 
 
 ## Usage
 
-On **macOS / Linux**, the command is `python3`. On **Windows**, it is `python` or `py`.
+On **Windows**, use `py` (or `python`). On **macOS / Linux**, use `python3`.
 
-### BNB balance
-
-```bash
-python3 bep20_balance.py 0x8894E0a0c962CB723c1976a4421c95949bE2D4E3
-```
-
-```
-Address: 0x8894E0a0c962CB723c1976a4421c95949bE2D4E3
-Balance: 2.998524679689695997 BNB
-```
-
-### BEP20 token balance
-
-Put the token's contract address after the wallet address:
+### All tokens in the list
 
 ```bash
-python3 bep20_balance.py 0x8894E0a0c962CB723c1976a4421c95949bE2D4E3 0x55d398326f99059fF775485246999027B3197955
+py scan.py 0x173f532daE51F93d8fAda21E8E5d50b01261ae83
 ```
 
 ```
-Address: 0x8894E0a0c962CB723c1976a4421c95949bE2D4E3
-Balance: 598.736736756852052811 USDT
+Chain:   BNB Smart Chain
+Address: 0x173f532daE51F93d8fAda21E8E5d50b01261ae83
+  1. BNB    0.006683409659387566
+  2. USDT   591.0804911
+  3. USDC   0
+  4. BUSD   0
+  5. FDUSD  0
+  6. DAI    0
+  7. ETH    0
+  8. BTCB   0
+  9. CAKE   0
 ```
 
-The script reads the token's decimals and symbol from the contract, so you don't have to enter them.
+The number next to each token is what you use with `list=`.
 
-Common token contracts on BSC:
-
-| Token | Contract |
-|-------|----------|
-| USDT  | `0x55d398326f99059fF775485246999027B3197955` |
-| USDC  | `0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d` |
-| CAKE  | `0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82` |
-
-### Interactive mode
-
-If you run it without arguments, it asks for an address:
+### Only some tokens
 
 ```bash
-python3 bep20_balance.py
-Enter BEP20 address: 0x...
+py scan.py 0x173f532daE51F93d8fAda21E8E5d50b01261ae83 list=1,2
 ```
 
-## Windows
+```
+Chain:   BNB Smart Chain
+Address: 0x173f532daE51F93d8fAda21E8E5d50b01261ae83
+  1. BNB   0.006683409659387566
+  2. USDT  591.0804911
+```
 
-1. Install Python from [python.org](https://www.python.org/downloads/) and check **"Add python.exe to PATH"** during setup.
-2. Open **Command Prompt** or **PowerShell** in the project folder.
-3. Run:
+> **PowerShell:** commas have a special meaning there, so put quotes around it: `"list=1,2"`. Without quotes, the script also handles PowerShell's split form, but quoting is the safest.
 
-   ```powershell
-   py bep20_balance.py 0xYourAddress
+### A token that isn't in the list
+
+```bash
+py scan.py 0xYourAddress token=0x1D2F0da169ceB9fC7B3144628dB156f3F6c60dBE
+```
+
+The script reads the token's symbol and decimals from the contract.
+
+### All options
+
+| Option | Example | Meaning |
+|--------|---------|---------|
+| *(address)* | `0x173f...ae83` | Wallet to check. If you leave it out, the script asks for it. |
+| `list=` | `list=1,3,4` | Only show these token numbers. |
+| `token=` | `token=0x55d3...7955` | Show one token by contract address. |
+| `chain=` | `chain=bsc` | Which chain to use. Default is `bsc`. |
+
+Run `py scan.py help` to see this from the command line.
+
+## Editing the token list
+
+Each chain has its own token list in [`tokens/`](tokens/). For BSC it's [`tokens/bsc.json`](tokens/bsc.json):
+
+```json
+[
+  { "symbol": "BNB",  "native": true, "decimals": 18 },
+  { "symbol": "USDT", "contract": "0x55d398326f99059fF775485246999027B3197955", "decimals": 18 }
+]
+```
+
+- The order of the entries sets their numbers for `list=`. If you insert a token in the middle, the numbers after it shift.
+- `"native": true` marks the chain's own coin (BNB), which has no contract.
+- Get contract addresses from [bscscan.com](https://bscscan.com). Copy-cat tokens often use the same name, so make sure it's the official contract.
+
+## Project layout
+
+```
+scan.py            command-line entry point
+chains/
+  __init__.py      chain registry (CHAINS) - add new chains here
+  base.py          Chain interface + token list loading
+  evm.py           EVM chains (BSC, Ethereum, Polygon, ...) via JSON-RPC
+  http.py          shared HTTPS helper
+tokens/
+  bsc.json         token list for BNB Smart Chain
+```
+
+### Adding a chain
+
+**Another EVM chain** (Ethereum, Polygon, Arbitrum, ...) uses the same code as BSC:
+
+1. Create `tokens/eth.json`, with the native coin first.
+2. Add one line to `CHAINS` in [`chains/__init__.py`](chains/__init__.py):
+   ```python
+   "eth": EvmChain("Ethereum", "eth.json", rpc_url="https://ethereum-rpc.publicnode.com"),
    ```
+3. Run `py scan.py 0xYourAddress chain=eth`.
 
-You can also double-click `bep20_balance.py`. It asks for the address, but the window closes as soon as the result prints, so running it from a terminal works better.
+**A non-EVM chain** (Tron, Solana, ...) needs its own module:
+
+1. Create `chains/tron.py` with a class that subclasses `chains.base.Chain` and implements `is_valid_address`, `native_balance_raw`, `token_balance_raw` and `token_info`. You can use `chains.http.post_json` for HTTP requests.
+2. Register it in `CHAINS` and add `tokens/tron.json`.
 
 ## Troubleshooting
 
@@ -81,6 +123,6 @@ pip3 install certifi
 
 or run `Install Certificates.command` from `/Applications/Python 3.x/`.
 
-**`Invalid address`**: the address must be `0x` followed by 40 hexadecimal characters.
+**`invalid ... address`**: BSC addresses are `0x` followed by 40 hexadecimal characters.
 
-**Timeouts or rate-limit errors**: the public node is sometimes busy. Wait and try again, or change `RPC_URL` at the top of the script to another BSC endpoint, e.g. `https://bsc-dataseed1.binance.org` or `https://bsc-rpc.publicnode.com`.
+**Timeouts or rate-limit errors**: the public node is sometimes busy. Wait and try again, or change `rpc_url` for the chain in [`chains/__init__.py`](chains/__init__.py) to another endpoint, e.g. `https://bsc-dataseed1.binance.org` or `https://bsc-rpc.publicnode.com`.
