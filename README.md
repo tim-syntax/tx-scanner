@@ -75,6 +75,28 @@ py scan.py 0xYourAddress token=0x1D2F0da169ceB9fC7B3144628dB156f3F6c60dBE
 
 The script reads the token's symbol and decimals from the contract.
 
+### Transaction history (Tron only for now)
+
+```bash
+py scan.py TF1rBJ1RRunsD1jtKenm9qQ9sovre7eWPE mode=history           # latest 10
+py scan.py TF1rBJ1RRunsD1jtKenm9qQ9sovre7eWPE mode=history view=20   # latest 20
+```
+
+```
+Latest 10 transactions (times in UTC):
+  ...
+  5. 2026-11-04 01:15:00  OUT     35268  USDT                to TEq9rNz643MLS7xdjanJnLxjrweVRhkUyW
+     https://tronscan.org/#/transaction/2c3a757e15bd3c6c4a1f32dd1f755e08e29b0c34637d5149905c70b4c3f66304
+```
+
+- It lists TRX, TRC20 and TRC10 transfers, plus other account activity such as resource delegation. History comes from TronGrid's public API.
+- TRX moved by a smart contract (internal transfers) isn't shown.
+- TRC10 amounts are raw numbers, because the response doesn't include their decimals.
+- `[unlisted]` marks a token that isn't in the chain's token list. It may be fake, even if it's named USDT.
+- **Never copy an address from your history to send money.** Scammers send tiny amounts from look-alike addresses so that you'll paste the wrong one (address poisoning).
+
+BSC isn't supported yet: `mode=history` on a `0x...` address stops with an error. Public BSC nodes can't list an address's transactions, so it needs an indexing service with an API key.
+
 ### All options
 
 | Option | Example | Meaning |
@@ -82,6 +104,8 @@ The script reads the token's symbol and decimals from the contract.
 | *(address)* | `0x173f...ae83` | Wallet to check. If you leave it out, the script asks for it. |
 | `list=` | `list=1,3,4` | Only show these token numbers. |
 | `token=` | `token=0x55d3...7955` | Show one token by contract address. |
+| `mode=` | `mode=history` | `default` shows assets; `history` shows transactions. |
+| `view=` | `view=20` | How many transactions to show with `mode=history`, from 1 to 200. Default is 10. |
 | `chain=` | `chain=tron` | Which chain to use (`bsc` or `tron`). By default it's detected from the address. |
 
 Run `py scan.py help` to see this from the command line.
@@ -136,6 +160,7 @@ To show USD for the native coin, also pass `native_usd_feed=` with that chain's 
 
 1. Create a module like [`chains/tron.py`](chains/tron.py), with a class that subclasses `chains.base.Chain` and implements `is_valid_address`, `native_balance_raw`, `token_balance_raw` and `token_info`. You can use `chains.http.post_json` for HTTP requests.
 2. Register it in `CHAINS` and add its token list to `tokens/`.
+3. To support `mode=history`, also implement `history` and `tx_url`.
 
 ## Troubleshooting
 

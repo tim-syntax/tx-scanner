@@ -8,7 +8,7 @@ Order matters: an address that fits several chains is detected as the first one 
 so 0x... addresses default to BSC. Use chain= to pick another chain.
 """
 
-from .base import Chain, ConfigError, Token
+from .base import Chain, ConfigError, HistoryUnavailable, Token, Transaction
 from .evm import EvmChain
 from .tron import TronChain
 
@@ -39,4 +39,4 @@ def detect_chain(address):
     return None
 
 
-__all__ = ["CHAINS", "detect_chain", "Chain", "ConfigError", "Token"]
+__all__ = ["CHAINS", "detect_chain", "Chain", "ConfigError", "HistoryUnavailable", "Token", "Transaction"]

@@ -22,6 +22,22 @@ class Token:
     contract: Optional[str] = None  # None means the chain's native coin (BNB, ETH, TRX...)
 
 
+class HistoryUnavailable(Exception):
+    """This chain can't provide transaction history."""
+
+
+@dataclass
+class Transaction:
+    timestamp: int  # Unix time in seconds
+    direction: str  # IN, OUT or SELF
+    kind: str  # what moved or happened: "USDT", "TRX", "Contract call"...
+    tx_id: str
+    amount: Optional[Decimal] = None  # None when the transaction isn't a simple transfer
+    counterparty: Optional[str] = None
+    success: bool = True
+    unlisted: bool = False  # a token that isn't in this chain's token list, so possibly fake
+
+
 class Chain:
     """Subclass this to add a chain. Implement the four methods that raise NotImplementedError."""
 
@@ -46,6 +62,14 @@ class Chain:
     def native_price_usd(self) -> Optional[Decimal]:
         """Return the native coin's USD price, or None if this chain has no price source."""
         return None
+
+    def history(self, address: str, count: int) -> list[Transaction]:
+        """Return up to count transactions, newest first."""
+        raise HistoryUnavailable(f"transaction history isn't supported on {self.name} yet")
+
+    def tx_url(self, tx_id: str) -> str:
+        """Return a block explorer link for a transaction."""
+        return tx_id
 
     # --- shared ---------------------------------------------------------
     def balance(self, address: str, token: Token) -> Decimal:
