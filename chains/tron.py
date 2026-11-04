@@ -1,13 +1,33 @@
 """Tron (TRX and TRC20 tokens) via a node's HTTP API."""
 
 import hashlib
+from decimal import Decimal
+from urllib.parse import urlencode
 
-from .base import Chain
+from .base import MAX_HISTORY_PAGES, Chain, HistoryLimitReached, Transaction, transfer_direction
 from .evm import decode_string
-from .http import post_json
+from .http import get_json, post_json
 
 BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 MAINNET_PREFIX = 0x41
+TRX_DECIMALS = 6
+
+# Normal nodes don't index transactions by address, so history comes from TronGrid's API.
+HISTORY_API_URL = "https://api.trongrid.io/v1/accounts"
+HISTORY_PAGE_SIZE = 200  # the most TronGrid returns in one request
+EXPLORER_TX_URL = "https://tronscan.org/#/transaction/"
+
+
+def _hex_to_address(hex_address):
+    """Encode a 41... hex address as a base58check T... address."""
+    payload = bytes.fromhex(hex_address)
+    raw = payload + hashlib.sha256(hashlib.sha256(payload).digest()).digest()[:4]
+    number = int.from_bytes(raw, "big")
+    encoded = ""
+    while number:
+        number, remainder = divmod(number, 58)
+        encoded = BASE58_ALPHABET[remainder] + encoded
+    return encoded
 
 
 def _address_to_bytes(address):
@@ -77,3 +97,88 @@ class TronChain(Chain):
 
     def native_price_usd(self):
         return self.native_usd_price() if self.native_usd_price else None
+
+    def tx_url(self, tx_id):
+        return EXPLORER_TX_URL + tx_id
+
+    def _history_rows(self, path, **extra):
+        """Yield rows newest first, requesting further pages only as they're needed."""
+        params = {
+            "limit": HISTORY_PAGE_SIZE,
+            "only_confirmed": "true",
+            "order_by": "block_timestamp,desc",
+            **extra,
+        }
+        for _ in range(MAX_HISTORY_PAGES):
+            response = get_json(f"{HISTORY_API_URL}/{path}?{urlencode(params)}")
+            if not response.get("success"):
+                raise RuntimeError(response.get("error", "TronGrid request failed"))
+            yield from response.get("data", [])
+            fingerprint = response.get("meta", {}).get("fingerprint")
+            if not fingerprint:
+                return
+            params["fingerprint"] = fingerprint
+        raise HistoryLimitReached()
+
+    def history(self, address, count):
+        rules = self.history_token_rules()
+        # search_internal=false leaves out TRX moved by contracts, which has a different format.
+        native_rows = self._history_rows(f"{address}/transactions", search_internal="false")
+        token_rows = self._history_rows(f"{address}/transactions/trc20")
+        sources = [
+            (self._parse_token_transfer(row, address, rules) for row in token_rows),
+            (self._parse_native(row, address) for row in native_rows),
+        ]
+        return self.collect_history(sources, count)
+
+    def _parse_token_transfer(self, row, address, rules):
+        info = row.get("token_info", {})
+        sender, receiver = row["from"], row["to"]
+        symbol = info.get("symbol", "TOKEN")
+        is_transfer = row.get("type") == "Transfer"
+        amount = Decimal(row["value"]).scaleb(-info.get("decimals", 0))
+        return Transaction(
+            timestamp=row["block_timestamp"] // 1000,
+            direction=transfer_direction(address, sender, receiver),
+            # An Approval's amount is a spending allowance, not money moved, so label it clearly.
+            kind=symbol if is_transfer else f"{symbol} {row.get('type')}",
+            tx_id=row["transaction_id"],
+            amount=amount,
+            counterparty=receiver if sender == address else sender,
+            # The minimum amount applies to transfers only: every approval of a listed token matters.
+            hidden=self.is_hidden_token(rules, info.get("address"), amount if is_transfer else None),
+            is_token_transfer=True,
+        )
+
+    @staticmethod
+    def _parse_native(row, address):
+        contract = row["raw_data"]["contract"][0]
+        contract_type = contract["type"]
+        value = contract["parameter"]["value"]
+        sender = _hex_to_address(value["owner_address"])
+        target = value.get("to_address") or value.get("receiver_address") or value.get("contract_address")
+        receiver = _hex_to_address(target) if target else None
+
+        amount, hidden = None, False
+        if contract_type == "TransferContract":
+            kind, amount = "TRX", Decimal(value["amount"]).scaleb(-TRX_DECIMALS)
+        elif contract_type == "TransferAssetContract":
+            # TRC10 tokens have no contract address to match against the token list.
+            kind, amount, hidden = f"TRC10 #{value['asset_name']}", Decimal(value["amount"]), True
+        elif contract_type == "TriggerSmartContract":
+            kind = "Contract call"
+        else:
+            kind = contract_type[: -len("Contract")] if contract_type.endswith("Contract") else contract_type
+
+        status = (row.get("ret") or [{}])[0].get("contractRet")
+        return Transaction(
+            timestamp=row["block_timestamp"] // 1000,
+            direction=transfer_direction(address, sender, receiver),
+            kind=kind,
+            tx_id=row["txID"],
+            amount=amount,
+            counterparty=receiver if sender == address else sender,
+            success=status in (None, "SUCCESS"),
+            hidden=hidden,
+            is_bare_call=contract_type == "TriggerSmartContract",
+        )

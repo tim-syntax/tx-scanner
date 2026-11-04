@@ -8,7 +8,7 @@ Order matters: an address that fits several chains is detected as the first one 
 so 0x... addresses default to BSC. Use chain= to pick another chain.
 """
 
-from .base import Chain, ConfigError, Token
+from .base import Chain, ConfigError, HistoryUnavailable, Token, Transaction
 from .evm import EvmChain
 from .tron import TronChain
 
@@ -17,6 +17,8 @@ _bsc = EvmChain(
     "bsc.json",
     rpc_url="https://bsc-dataseed.bnbchain.org",
     native_usd_feed="0x0567F2323251f0Aab15c8dFb1967E4e8A7D42aeE",  # Chainlink BNB / USD
+    nodereal_url="https://bsc-mainnet.nodereal.io/v1/",
+    explorer_tx_url="https://bscscan.com/tx/",
 )
 
 CHAINS = {
@@ -39,4 +41,4 @@ def detect_chain(address):
     return None
 
 
-__all__ = ["CHAINS", "detect_chain", "Chain", "ConfigError", "Token"]
+__all__ = ["CHAINS", "detect_chain", "Chain", "ConfigError", "HistoryUnavailable", "Token", "Transaction"]

@@ -75,6 +75,40 @@ py scan.py 0xYourAddress token=0x1D2F0da169ceB9fC7B3144628dB156f3F6c60dBE
 
 The script reads the token's symbol and decimals from the contract.
 
+### Transaction history
+
+```bash
+py scan.py TF1rBJ1RRunsD1jtKenm9qQ9sovre7eWPE mode=history           # latest 10
+py scan.py TF1rBJ1RRunsD1jtKenm9qQ9sovre7eWPE mode=history view=20   # latest 20
+```
+
+```
+Latest 10 transactions (times in UTC):
+  ...
+  5. 2026-11-04 01:15:00 (42 min ago)  OUT     35268  USDT                to TEq9rNz643MLS7xdjanJnLxjrweVRhkUyW
+     https://tronscan.org/#/transaction/2c3a757e15bd3c6c4a1f32dd1f755e08e29b0c34637d5149905c70b4c3f66304
+```
+
+- Tokens that aren't in the chain's token list are hidden, because they may be fake, even if they're named USDT. To see a real token, add it to the list.
+- USDT transfers of 0.1 or less are hidden. BNB and TRX transfers are always shown, however small.
+- The filters run before counting, so `view=10` means 10 transactions that pass them. If too many have to be skipped, the search stops after 10 pages per source and says older transactions may exist.
+- **Never copy an address from your history to send money.** Scammers send tiny amounts from look-alike addresses so that you'll paste the wrong one (address poisoning).
+
+**Tron** needs no key; history comes from TronGrid's public API.
+- It lists TRX, TRC20 and TRC10 transfers, plus other account activity such as resource delegation.
+- TRX moved by a smart contract (internal transfers) isn't shown.
+- TRC10 amounts are raw numbers, because the response doesn't include their decimals.
+
+**BSC** needs a free [NodeReal](https://nodereal.io) API key, because public BSC nodes can't list an address's transactions.
+- It lists BNB transfers (including BNB moved by smart contracts), BEP20 transfers and other contract calls.
+- Each check uses at least 6 NodeReal calls, and more if many rows are filtered out. On the free plan, that's at most about 220 checks a day, based on NodeReal's published prices.
+
+To set up the key, copy `.env.example` to `.env` and fill in your key. Git ignores `.env`, so create it on each computer you use:
+
+```
+NODEREAL_API_KEY=your_key
+```
+
 ### All options
 
 | Option | Example | Meaning |
@@ -82,6 +116,8 @@ The script reads the token's symbol and decimals from the contract.
 | *(address)* | `0x173f...ae83` | Wallet to check. If you leave it out, the script asks for it. |
 | `list=` | `list=1,3,4` | Only show these token numbers. |
 | `token=` | `token=0x55d3...7955` | Show one token by contract address. |
+| `mode=` | `mode=history` | `default` shows assets; `history` shows transactions. |
+| `view=` | `view=20` | How many transactions to show with `mode=history`, from 1 to 200. Default is 10. |
 | `chain=` | `chain=tron` | Which chain to use (`bsc` or `tron`). By default it's detected from the address. |
 
 Run `py scan.py help` to see this from the command line.
@@ -99,6 +135,7 @@ Each chain has its own token list in [`tokens/`](tokens/): [`tokens/bsc.json`](t
 
 - The order of the entries sets their numbers for `list=`. If you insert a token in the middle, the numbers after it shift.
 - `"native": true` marks the chain's own coin (BNB, TRX), which has no contract.
+- `"min_history_amount": "0.1"` hides history transfers of that amount or less. It's optional, and USDT has it on both chains.
 - Decimals differ between chains: USDT has 18 on BSC and 6 on Tron.
 - Get contract addresses from [bscscan.com](https://bscscan.com) or [tronscan.org](https://tronscan.org). Copy-cat tokens often use the same name, so make sure it's the official contract.
 
@@ -136,6 +173,7 @@ To show USD for the native coin, also pass `native_usd_feed=` with that chain's 
 
 1. Create a module like [`chains/tron.py`](chains/tron.py), with a class that subclasses `chains.base.Chain` and implements `is_valid_address`, `native_balance_raw`, `token_balance_raw` and `token_info`. You can use `chains.http.post_json` for HTTP requests.
 2. Register it in `CHAINS` and add its token list to `tokens/`.
+3. To support `mode=history`, also implement `history` and `tx_url`.
 
 ## Troubleshooting
 
