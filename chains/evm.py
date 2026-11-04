@@ -20,7 +20,7 @@ LATEST_ROUND_DATA = "0xfeaf968c"
 MAX_PRICE_AGE_SECONDS = 3600
 
 
-def _decode_string(hex_result):
+def decode_string(hex_result):
     raw = bytes.fromhex(hex_result[2:])
     if len(raw) == 32:  # some old tokens return bytes32 instead of string
         return raw.rstrip(b"\x00").decode(errors="ignore")
@@ -56,7 +56,7 @@ class EvmChain(Chain):
     def token_info(self, contract):
         decimals = int(self._call(contract, DECIMALS), 16)
         try:
-            symbol = _decode_string(self._call(contract, SYMBOL))
+            symbol = decode_string(self._call(contract, SYMBOL))
         except Exception:
             symbol = "TOKEN"
         return symbol, decimals
@@ -64,9 +64,13 @@ class EvmChain(Chain):
     def native_price_usd(self):
         if self.native_usd_feed is None:
             return None
-        decimals = int(self._call(self.native_usd_feed, DECIMALS), 16)
+        return self.chainlink_price(self.native_usd_feed)
+
+    def chainlink_price(self, feed):
+        """Read the current price from a Chainlink feed contract on this chain."""
+        decimals = int(self._call(feed, DECIMALS), 16)
         # latestRoundData() returns (roundId, answer, startedAt, updatedAt, answeredInRound)
-        data = bytes.fromhex(self._call(self.native_usd_feed, LATEST_ROUND_DATA)[2:])
+        data = bytes.fromhex(self._call(feed, LATEST_ROUND_DATA)[2:])
         answer = int.from_bytes(data[32:64], "big", signed=True)
         updated_at = int.from_bytes(data[96:128], "big")
         if answer <= 0:

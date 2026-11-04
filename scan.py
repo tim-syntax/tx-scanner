@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Show wallet balances on a blockchain (BNB Smart Chain today; more chains via chains/).
+"""Show wallet balances on a blockchain (BNB Smart Chain and Tron; more chains via chains/).
 
 Usage:
     py scan.py <address>                     all tokens in the chain's token list
     py scan.py <address> list=1,3,4          only tokens #1, #3 and #4 from that list
     py scan.py <address> token=<contract>    one token that isn't in the list
-    py scan.py <address> chain=bsc           pick the chain (default: bsc)
+    py scan.py <address> chain=tron          pick the chain (default: detected from the address)
     py scan.py                               asks for the address
 
 Token numbers are shown next to each balance in the default output.
@@ -13,7 +13,7 @@ Token numbers are shown next to each balance in the default output.
 
 import sys
 
-from chains import CHAINS, DEFAULT_CHAIN, ConfigError, Token
+from chains import CHAINS, ConfigError, Token, detect_chain
 
 OPTIONS = ("list", "token", "chain")
 
@@ -78,13 +78,19 @@ def usd_suffix(chain, balance):
 def main():
     address, options = parse_args(sys.argv[1:])
 
-    chain_key = options.get("chain", DEFAULT_CHAIN).lower()
-    chain = CHAINS.get(chain_key)
-    if chain is None:
-        fail(f"unknown chain '{chain_key}'. Supported: {', '.join(CHAINS)}")
+    chain = None
+    if "chain" in options:
+        chain_key = options["chain"].lower()
+        chain = CHAINS.get(chain_key)
+        if chain is None:
+            fail(f"unknown chain '{chain_key}'. Supported: {', '.join(CHAINS)}")
 
     if address is None:
-        address = input(f"Enter {chain.name} address: ").strip()
+        address = input(f"Enter {chain.name if chain else 'wallet'} address: ").strip()
+    if chain is None:
+        chain = detect_chain(address)
+        if chain is None:
+            fail(f"not a valid address on any supported chain ({', '.join(CHAINS)}): {address}")
     if not chain.is_valid_address(address):
         fail(f"invalid {chain.name} address: {address}")
 

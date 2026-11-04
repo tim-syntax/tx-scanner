@@ -1,0 +1,11 @@
+[
+  { "symbol": "TRX",  "native": true, "decimals": 6 },
+  { "symbol": "USDT", "contract": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", "decimals": 6 },
+  { "symbol": "USDC", "contract": "TEkxiTehnzSmSe2XqrBj4w32RUN966rdz8", "decimals": 6 },
+  { "symbol": "USDD", "contract": "TXDk8mbtRbXeYuMNS83CfKPaYYT8XWv9Hz", "decimals": 18 },
+  { "symbol": "TUSD", "contract": "TUpMhErZL2fhh4sVNULAbNKLokS4GjC1F4", "decimals": 18 },
+  { "symbol": "JST",  "contract": "TCFLL5dx5ZJdKnWuesXxi1VPwjLVmWZZy9", "decimals": 18 },
+  { "symbol": "SUN",  "contract": "TSSMHYeV2uE9qYH95DqyoCuNCzEL1NvU3S", "decimals": 18 },
+  { "symbol": "WIN",  "contract": "TLa2f6VPqDgRE67v1736s7bJ8Ray5wYjU7", "decimals": 6 },
+  { "symbol": "BTT",  "contract": "TAFjULxiVgT4qWk6UZwjqwZXTSaGaqnVp4", "decimals": 18 }
+]

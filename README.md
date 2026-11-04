@@ -1,8 +1,10 @@
 # tx-scanner
 
-A small Python tool that shows wallet balances on a blockchain. **BNB Smart Chain (BSC / BEP20)** is supported today, and the code is set up so Ethereum, Tron and other chains can be added.
+A small Python tool that shows wallet balances on a blockchain. **BNB Smart Chain (BSC / BEP20)** and **Tron (TRC20)** are supported, and the code is set up so Ethereum and other chains can be added.
 
-It shows the native coin (BNB) and any BEP20 tokens you list, such as USDT and USDC. You don't need an API key or extra packages; it reads directly from a public node.
+It shows the native coin (BNB, TRX) and any tokens you list, such as USDT and USDC. You don't need an API key or extra packages; it reads directly from public nodes.
+
+The chain is detected from the address: `0x...` is BSC and `T...` is Tron.
 
 ## Requirements
 
@@ -35,7 +37,20 @@ Address: 0x173f532daE51F93d8fAda21E8E5d50b01261ae83
 
 The number next to each token is what you use with `list=`.
 
-The USD value is shown for BNB only. It uses the current price from the [Chainlink BNB / USD feed](https://data.chain.link/feeds/bsc/mainnet/bnb-usd) on BSC, so it needs no API key. If the price can't be read or is more than an hour old, the balance still shows, with `(USD unavailable: <reason>)` next to it.
+The USD value is shown for the native coin only (BNB, TRX). It uses the current price from Chainlink's BNB / USD and TRX / USD feeds on BSC, so it needs no API key. If the price can't be read or is more than an hour old, the balance still shows, with `(USD unavailable: <reason>)` next to it.
+
+A Tron address works the same way:
+
+```bash
+py scan.py TF1rBJ1RRunsD1jtKenm9qQ9sovre7eWPE list=1,2
+```
+
+```
+Chain:   Tron
+Address: TF1rBJ1RRunsD1jtKenm9qQ9sovre7eWPE
+  1. TRX   2403.112174 (774.43 USD)
+  2. USDT  0.357138
+```
 
 ### Only some tokens
 
@@ -67,13 +82,13 @@ The script reads the token's symbol and decimals from the contract.
 | *(address)* | `0x173f...ae83` | Wallet to check. If you leave it out, the script asks for it. |
 | `list=` | `list=1,3,4` | Only show these token numbers. |
 | `token=` | `token=0x55d3...7955` | Show one token by contract address. |
-| `chain=` | `chain=bsc` | Which chain to use. Default is `bsc`. |
+| `chain=` | `chain=tron` | Which chain to use (`bsc` or `tron`). By default it's detected from the address. |
 
 Run `py scan.py help` to see this from the command line.
 
 ## Editing the token list
 
-Each chain has its own token list in [`tokens/`](tokens/). For BSC it's [`tokens/bsc.json`](tokens/bsc.json):
+Each chain has its own token list in [`tokens/`](tokens/): [`tokens/bsc.json`](tokens/bsc.json) and [`tokens/tron.json`](tokens/tron.json). For example:
 
 ```json
 [
@@ -83,8 +98,9 @@ Each chain has its own token list in [`tokens/`](tokens/). For BSC it's [`tokens
 ```
 
 - The order of the entries sets their numbers for `list=`. If you insert a token in the middle, the numbers after it shift.
-- `"native": true` marks the chain's own coin (BNB), which has no contract.
-- Get contract addresses from [bscscan.com](https://bscscan.com). Copy-cat tokens often use the same name, so make sure it's the official contract.
+- `"native": true` marks the chain's own coin (BNB, TRX), which has no contract.
+- Decimals differ between chains: USDT has 18 on BSC and 6 on Tron.
+- Get contract addresses from [bscscan.com](https://bscscan.com) or [tronscan.org](https://tronscan.org). Copy-cat tokens often use the same name, so make sure it's the official contract.
 
 ## Project layout
 
@@ -94,9 +110,11 @@ chains/
   __init__.py      chain registry (CHAINS) - add new chains here
   base.py          Chain interface + token list loading
   evm.py           EVM chains (BSC, Ethereum, Polygon, ...) via JSON-RPC
+  tron.py          Tron via a node's HTTP API
   http.py          shared HTTPS helper
 tokens/
   bsc.json         token list for BNB Smart Chain
+  tron.json        token list for Tron
 ```
 
 ### Adding a chain
@@ -112,10 +130,12 @@ tokens/
 
 To show USD for the native coin, also pass `native_usd_feed=` with that chain's Chainlink feed address. Without it, the balance prints with no USD value.
 
-**A non-EVM chain** (Tron, Solana, ...) needs its own module:
+`0x...` addresses are detected as BSC because it's listed first in `CHAINS`, so other EVM chains need `chain=`.
 
-1. Create `chains/tron.py` with a class that subclasses `chains.base.Chain` and implements `is_valid_address`, `native_balance_raw`, `token_balance_raw` and `token_info`. You can use `chains.http.post_json` for HTTP requests.
-2. Register it in `CHAINS` and add `tokens/tron.json`.
+**A non-EVM chain** (Solana, ...) needs its own module:
+
+1. Create a module like [`chains/tron.py`](chains/tron.py), with a class that subclasses `chains.base.Chain` and implements `is_valid_address`, `native_balance_raw`, `token_balance_raw` and `token_info`. You can use `chains.http.post_json` for HTTP requests.
+2. Register it in `CHAINS` and add its token list to `tokens/`.
 
 ## Troubleshooting
 
@@ -127,6 +147,6 @@ pip3 install certifi
 
 or run `Install Certificates.command` from `/Applications/Python 3.x/`.
 
-**`invalid ... address`**: BSC addresses are `0x` followed by 40 hexadecimal characters.
+**`invalid ... address`** or **`not a valid address`**: BSC addresses are `0x` followed by 40 hexadecimal characters. Tron addresses start with `T` and are 34 characters long; a single wrong character fails the checksum.
 
 **Timeouts or rate-limit errors**: the public node is sometimes busy. Wait and try again, or change `rpc_url` for the chain in [`chains/__init__.py`](chains/__init__.py) to another endpoint, e.g. `https://bsc-dataseed1.binance.org` or `https://bsc-rpc.publicnode.com`.
