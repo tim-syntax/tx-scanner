@@ -4,7 +4,7 @@ import hashlib
 from decimal import Decimal
 from urllib.parse import urlencode
 
-from .base import Chain, Transaction
+from .base import Chain, Transaction, transfer_direction
 from .evm import decode_string
 from .http import get_json, post_json
 
@@ -27,12 +27,6 @@ def _hex_to_address(hex_address):
         number, remainder = divmod(number, 58)
         encoded = BASE58_ALPHABET[remainder] + encoded
     return encoded
-
-
-def _direction(address, sender, receiver):
-    if sender == receiver:
-        return "SELF"
-    return "OUT" if sender == address else "IN"
 
 
 def _address_to_bytes(address):
@@ -135,7 +129,7 @@ class TronChain(Chain):
         symbol = info.get("symbol", "TOKEN")
         return Transaction(
             timestamp=row["block_timestamp"] // 1000,
-            direction=_direction(address, sender, receiver),
+            direction=transfer_direction(address, sender, receiver),
             # An Approval's amount is a spending allowance, not money moved, so label it clearly.
             kind=symbol if row.get("type") == "Transfer" else f"{symbol} {row.get('type')}",
             tx_id=row["transaction_id"],
@@ -167,7 +161,7 @@ class TronChain(Chain):
         status = (row.get("ret") or [{}])[0].get("contractRet")
         return Transaction(
             timestamp=row["block_timestamp"] // 1000,
-            direction=_direction(address, sender, receiver),
+            direction=transfer_direction(address, sender, receiver),
             kind=kind,
             tx_id=row["txID"],
             amount=amount,

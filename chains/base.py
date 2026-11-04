@@ -38,6 +38,13 @@ class Transaction:
     unlisted: bool = False  # a token that isn't in this chain's token list, so possibly fake
 
 
+def transfer_direction(address, sender, receiver):
+    """Return IN, OUT or SELF from the point of view of address."""
+    if sender == receiver:
+        return "SELF"
+    return "OUT" if sender == address else "IN"
+
+
 class Chain:
     """Subclass this to add a chain. Implement the four methods that raise NotImplementedError."""
 

@@ -75,7 +75,7 @@ py scan.py 0xYourAddress token=0x1D2F0da169ceB9fC7B3144628dB156f3F6c60dBE
 
 The script reads the token's symbol and decimals from the contract.
 
-### Transaction history (Tron only for now)
+### Transaction history
 
 ```bash
 py scan.py TF1rBJ1RRunsD1jtKenm9qQ9sovre7eWPE mode=history           # latest 10
@@ -89,13 +89,23 @@ Latest 10 transactions (times in UTC):
      https://tronscan.org/#/transaction/2c3a757e15bd3c6c4a1f32dd1f755e08e29b0c34637d5149905c70b4c3f66304
 ```
 
-- It lists TRX, TRC20 and TRC10 transfers, plus other account activity such as resource delegation. History comes from TronGrid's public API.
-- TRX moved by a smart contract (internal transfers) isn't shown.
-- TRC10 amounts are raw numbers, because the response doesn't include their decimals.
-- `[unlisted]` marks a token that isn't in the chain's token list. It may be fake, even if it's named USDT.
+- `[unlisted]` marks a token that isn't in the chain's token list. It may be fake, even if it's named USDT. A fake token can also show your wallet as the sender of a transfer you never made.
 - **Never copy an address from your history to send money.** Scammers send tiny amounts from look-alike addresses so that you'll paste the wrong one (address poisoning).
 
-BSC isn't supported yet: `mode=history` on a `0x...` address stops with an error. Public BSC nodes can't list an address's transactions, so it needs an indexing service with an API key.
+**Tron** needs no key; history comes from TronGrid's public API.
+- It lists TRX, TRC20 and TRC10 transfers, plus other account activity such as resource delegation.
+- TRX moved by a smart contract (internal transfers) isn't shown.
+- TRC10 amounts are raw numbers, because the response doesn't include their decimals.
+
+**BSC** needs a free [NodeReal](https://nodereal.io) API key, because public BSC nodes can't list an address's transactions.
+- It lists BNB transfers (including BNB moved by smart contracts), BEP20 transfers and other contract calls.
+- Each check uses 6 NodeReal calls. On the free plan, that's roughly 220 checks a day, based on NodeReal's published prices.
+
+To set up the key, copy `.env.example` to `.env` and fill in your key. Git ignores `.env`, so create it on each computer you use:
+
+```
+NODEREAL_API_KEY=your_key
+```
 
 ### All options
 

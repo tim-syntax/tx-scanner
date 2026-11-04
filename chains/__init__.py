@@ -17,6 +17,8 @@ _bsc = EvmChain(
     "bsc.json",
     rpc_url="https://bsc-dataseed.bnbchain.org",
     native_usd_feed="0x0567F2323251f0Aab15c8dFb1967E4e8A7D42aeE",  # Chainlink BNB / USD
+    nodereal_url="https://bsc-mainnet.nodereal.io/v1/",
+    explorer_tx_url="https://bscscan.com/tx/",
 )
 
 CHAINS = {
