@@ -85,7 +85,7 @@ py scan.py TF1rBJ1RRunsD1jtKenm9qQ9sovre7eWPE mode=history view=20   # latest 20
 ```
 Latest 10 transactions (times in UTC):
   ...
-  5. 2026-11-04 01:15:00  OUT     35268  USDT                to TEq9rNz643MLS7xdjanJnLxjrweVRhkUyW
+  5. 2026-11-04 01:15:00 (42 min ago)  OUT     35268  USDT                to TEq9rNz643MLS7xdjanJnLxjrweVRhkUyW
      https://tronscan.org/#/transaction/2c3a757e15bd3c6c4a1f32dd1f755e08e29b0c34637d5149905c70b4c3f66304
 ```
 

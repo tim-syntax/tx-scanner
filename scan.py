@@ -14,6 +14,7 @@ Token numbers are shown next to each balance in the default output.
 """
 
 import sys
+import time
 from datetime import datetime, timezone
 
 from chains import CHAINS, ConfigError, HistoryUnavailable, Token, detect_chain
@@ -92,6 +93,20 @@ def usd_suffix(chain, balance):
     return f" ({balance * price:,.2f} USD)"
 
 
+def time_ago(timestamp, now):
+    """Describe how long ago a Unix timestamp was, e.g. '12 min ago' or '3 h 5 min ago'."""
+    minutes = max(0, int(now - timestamp)) // 60  # max: a slow local clock could give a negative age
+    if minutes < 1:
+        return "just now"
+    hours, minutes = divmod(minutes, 60)
+    days, hours = divmod(hours, 24)
+    if days:
+        return f"{days} d {hours} h ago" if hours else f"{days} d ago"
+    if hours:
+        return f"{hours} h {minutes} min ago" if minutes else f"{hours} h ago"
+    return f"{minutes} min ago"
+
+
 def show_assets(chain, address, options):
     if "token" in options and "list" in options:
         fail("use either list= or token=, not both")
@@ -154,8 +169,12 @@ def show_history(chain, address, options):
     ]
     amount_width = max(len(amount) for amount, _ in rows)
     kind_width = max(len(kind) for _, kind in rows)
-    for number, (tx, (amount, kind)) in enumerate(zip(transactions, rows), 1):
+    now = time.time()
+    ages = [f"({time_ago(tx.timestamp, now)})" for tx in transactions]
+    age_width = max(len(age) for age in ages)
+    for number, (tx, (amount, kind), age) in enumerate(zip(transactions, rows, ages), 1):
         when = datetime.fromtimestamp(tx.timestamp, timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        when = f"{when} {age:<{age_width}}"
         preposition = "from" if tx.direction == "IN" else "to"
         party = f"{preposition} {tx.counterparty}" if tx.counterparty else ""
         flags = ("  [unlisted]" if tx.unlisted else "") + ("  FAILED" if not tx.success else "")
