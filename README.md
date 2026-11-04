@@ -18,14 +18,14 @@ On **Windows**, use `py` (or `python`). On **macOS / Linux**, use `python3`.
 ### All tokens in the list
 
 ```bash
-py scan.py 0x173f532daE51F93d8fAda21E8E5d50b01261ae83
+py scan.py 0xYourAddress
 ```
 
 ```
 Chain:   BNB Smart Chain
-Address: 0x173f532daE51F93d8fAda21E8E5d50b01261ae83
-  1. BNB    0.006683409659387566 (4.63 USD)
-  2. USDT   591.0804911
+Address: 0xYourAddress
+  1. BNB    0.5 (350.00 USD)
+  2. USDT   100.25
   3. USDC   0
   4. BUSD   0
   5. FDUSD  0
@@ -42,27 +42,27 @@ The USD value is shown for the native coin only (BNB, TRX). It uses the current 
 A Tron address works the same way:
 
 ```bash
-py scan.py TF1rBJ1RRunsD1jtKenm9qQ9sovre7eWPE list=1,2
+py scan.py TYourAddress list=1,2
 ```
 
 ```
 Chain:   Tron
-Address: TF1rBJ1RRunsD1jtKenm9qQ9sovre7eWPE
-  1. TRX   2403.112174 (774.43 USD)
-  2. USDT  0.357138
+Address: TYourAddress
+  1. TRX   1000 (320.00 USD)
+  2. USDT  100.25
 ```
 
 ### Only some tokens
 
 ```bash
-py scan.py 0x173f532daE51F93d8fAda21E8E5d50b01261ae83 list=1,2
+py scan.py 0xYourAddress list=1,2
 ```
 
 ```
 Chain:   BNB Smart Chain
-Address: 0x173f532daE51F93d8fAda21E8E5d50b01261ae83
-  1. BNB   0.006683409659387566 (4.63 USD)
-  2. USDT  591.0804911
+Address: 0xYourAddress
+  1. BNB   0.5 (350.00 USD)
+  2. USDT  100.25
 ```
 
 > **PowerShell:** commas have a special meaning there, so put quotes around it: `"list=1,2"`. Without quotes, the script also handles PowerShell's split form, but quoting is the safest.
@@ -78,15 +78,15 @@ The script reads the token's symbol and decimals from the contract.
 ### Transaction history
 
 ```bash
-py scan.py TF1rBJ1RRunsD1jtKenm9qQ9sovre7eWPE mode=history           # latest 10
-py scan.py TF1rBJ1RRunsD1jtKenm9qQ9sovre7eWPE mode=history view=20   # latest 20
+py scan.py TYourAddress mode=history           # latest 10
+py scan.py TYourAddress mode=history view=20   # latest 20
 ```
 
 ```
 Latest 10 transactions (times in UTC):
   ...
-  5. 2026-11-04 01:15:00 (42 min ago)  OUT     35268  USDT                to TEq9rNz643MLS7xdjanJnLxjrweVRhkUyW
-     https://tronscan.org/#/transaction/2c3a757e15bd3c6c4a1f32dd1f755e08e29b0c34637d5149905c70b4c3f66304
+  5. 2026-11-04 01:15:00 (42 min ago)  OUT       100  USDT                to TRecipientAddress
+     https://tronscan.org/#/transaction/<transaction id>
 ```
 
 - Tokens that aren't in the chain's token list are hidden, because they may be fake, even if they're named USDT. To see a real token, add it to the list.
