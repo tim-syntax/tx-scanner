@@ -22,7 +22,7 @@ py scan.py 0x173f532daE51F93d8fAda21E8E5d50b01261ae83
 ```
 Chain:   BNB Smart Chain
 Address: 0x173f532daE51F93d8fAda21E8E5d50b01261ae83
-  1. BNB    0.006683409659387566
+  1. BNB    0.006683409659387566 (4.63 USD)
   2. USDT   591.0804911
   3. USDC   0
   4. BUSD   0
@@ -35,6 +35,8 @@ Address: 0x173f532daE51F93d8fAda21E8E5d50b01261ae83
 
 The number next to each token is what you use with `list=`.
 
+The USD value is shown for BNB only. It uses the current price from the [Chainlink BNB / USD feed](https://data.chain.link/feeds/bsc/mainnet/bnb-usd) on BSC, so it needs no API key. If the price can't be read or is more than an hour old, the balance still shows, with `(USD unavailable: <reason>)` next to it.
+
 ### Only some tokens
 
 ```bash
@@ -44,7 +46,7 @@ py scan.py 0x173f532daE51F93d8fAda21E8E5d50b01261ae83 list=1,2
 ```
 Chain:   BNB Smart Chain
 Address: 0x173f532daE51F93d8fAda21E8E5d50b01261ae83
-  1. BNB   0.006683409659387566
+  1. BNB   0.006683409659387566 (4.63 USD)
   2. USDT  591.0804911
 ```
 
@@ -107,6 +109,8 @@ tokens/
    "eth": EvmChain("Ethereum", "eth.json", rpc_url="https://ethereum-rpc.publicnode.com"),
    ```
 3. Run `py scan.py 0xYourAddress chain=eth`.
+
+To show USD for the native coin, also pass `native_usd_feed=` with that chain's Chainlink feed address. Without it, the balance prints with no USD value.
 
 **A non-EVM chain** (Tron, Solana, ...) needs its own module:
 

@@ -43,6 +43,10 @@ class Chain:
         """Return (symbol, decimals) read from the token contract."""
         raise NotImplementedError
 
+    def native_price_usd(self) -> Optional[Decimal]:
+        """Return the native coin's USD price, or None if this chain has no price source."""
+        return None
+
     # --- shared ---------------------------------------------------------
     def balance(self, address: str, token: Token) -> Decimal:
         if token.contract is None:

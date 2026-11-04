@@ -64,6 +64,17 @@ def parse_list(value, count):
     return numbers
 
 
+def usd_suffix(chain, balance):
+    """' (4.63 USD)' for a native coin balance, or '' if the chain has no price source."""
+    try:
+        price = chain.native_price_usd()
+    except Exception as e:
+        return f" (USD unavailable: {e})"
+    if price is None:
+        return ""
+    return f" ({balance * price:,.2f} USD)"
+
+
 def main():
     address, options = parse_args(sys.argv[1:])
 
@@ -103,7 +114,10 @@ def main():
     for number, token in selected:
         label = f"{number:>3}. " if number is not None else "     "
         try:
-            amount = f"{chain.balance(address, token).normalize():f}"
+            balance = chain.balance(address, token)
+            amount = f"{balance.normalize():f}"
+            if token.contract is None:
+                amount += usd_suffix(chain, balance)
         except Exception as e:
             amount = f"error: {e}"
         print(f"{label}{token.symbol:<{width}}  {amount}")
