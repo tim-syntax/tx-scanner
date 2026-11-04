@@ -22,7 +22,7 @@ from chains import CHAINS, ConfigError, HistoryUnavailable, Token, detect_chain
 OPTIONS = ("list", "token", "chain", "mode", "view")
 MODES = ("default", "history")
 DEFAULT_VIEW = 10
-MAX_VIEW = 200  # the most TronGrid returns in one request
+MAX_VIEW = 200
 
 # Avoid UnicodeEncodeError on Windows consoles/redirects when a token symbol has non-ASCII chars.
 if hasattr(sys.stdout, "reconfigure"):
@@ -150,7 +150,7 @@ def show_history(chain, address, options):
     view = parse_view(options["view"]) if "view" in options else DEFAULT_VIEW
 
     try:
-        transactions = chain.history(address, view)
+        transactions, finished = chain.history(address, view)
     except (ConfigError, HistoryUnavailable) as e:
         fail(str(e))
     except Exception as e:
@@ -158,8 +158,9 @@ def show_history(chain, address, options):
 
     print(f"Chain:   {chain.name}")
     print(f"Address: {address}")
+    unfinished_note = "Stopped searching to limit requests, so older transactions may exist."
     if not transactions:
-        print("No transactions found.")
+        print("No transactions found." if finished else f"No transactions found. {unfinished_note}")
         return
     print(f"Latest {len(transactions)} transactions (times in UTC):")
 
@@ -177,12 +178,12 @@ def show_history(chain, address, options):
         when = f"{when} {age:<{age_width}}"
         preposition = "from" if tx.direction == "IN" else "to"
         party = f"{preposition} {tx.counterparty}" if tx.counterparty else ""
-        flags = ("  [unlisted]" if tx.unlisted else "") + ("  FAILED" if not tx.success else "")
+        flags = "  FAILED" if not tx.success else ""
         print(f"{number:>3}. {when}  {tx.direction:<4} {amount:>{amount_width}}  {kind:<{kind_width}}  {party}{flags}")
         print(f"     {chain.tx_url(tx.tx_id)}")
 
-    if any(tx.unlisted for tx in transactions):
-        print("\n[unlisted] = not in this chain's token list. It may be fake, even if it's named USDT.")
+    if not finished:
+        print(f"\n{unfinished_note}")
 
 
 def main():

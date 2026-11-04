@@ -1,6 +1,6 @@
 [
   { "symbol": "TRX",  "native": true, "decimals": 6 },
-  { "symbol": "USDT", "contract": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", "decimals": 6 },
+  { "symbol": "USDT", "contract": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", "min_history_amount": "0.1", "decimals": 6 },
   { "symbol": "USDC", "contract": "TEkxiTehnzSmSe2XqrBj4w32RUN966rdz8", "decimals": 6 },
   { "symbol": "USDD", "contract": "TXDk8mbtRbXeYuMNS83CfKPaYYT8XWv9Hz", "decimals": 18 },
   { "symbol": "TUSD", "contract": "TUpMhErZL2fhh4sVNULAbNKLokS4GjC1F4", "decimals": 18 },

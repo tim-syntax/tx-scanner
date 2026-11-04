@@ -4,7 +4,7 @@ import hashlib
 from decimal import Decimal
 from urllib.parse import urlencode
 
-from .base import Chain, Transaction, transfer_direction
+from .base import MAX_HISTORY_PAGES, Chain, HistoryLimitReached, Transaction, transfer_direction
 from .evm import decode_string
 from .http import get_json, post_json
 
@@ -14,6 +14,7 @@ TRX_DECIMALS = 6
 
 # Normal nodes don't index transactions by address, so history comes from TronGrid's API.
 HISTORY_API_URL = "https://api.trongrid.io/v1/accounts"
+HISTORY_PAGE_SIZE = 200  # the most TronGrid returns in one request
 EXPLORER_TX_URL = "https://tronscan.org/#/transaction/"
 
 
@@ -100,42 +101,53 @@ class TronChain(Chain):
     def tx_url(self, tx_id):
         return EXPLORER_TX_URL + tx_id
 
-    def _fetch_history(self, path, count, **extra):
-        query = urlencode({"limit": count, "only_confirmed": "true", "order_by": "block_timestamp,desc", **extra})
-        response = get_json(f"{HISTORY_API_URL}/{path}?{query}")
-        if not response.get("success"):
-            raise RuntimeError(response.get("error", "TronGrid request failed"))
-        return response.get("data", [])
+    def _history_rows(self, path, **extra):
+        """Yield rows newest first, requesting further pages only as they're needed."""
+        params = {
+            "limit": HISTORY_PAGE_SIZE,
+            "only_confirmed": "true",
+            "order_by": "block_timestamp,desc",
+            **extra,
+        }
+        for _ in range(MAX_HISTORY_PAGES):
+            response = get_json(f"{HISTORY_API_URL}/{path}?{urlencode(params)}")
+            if not response.get("success"):
+                raise RuntimeError(response.get("error", "TronGrid request failed"))
+            yield from response.get("data", [])
+            fingerprint = response.get("meta", {}).get("fingerprint")
+            if not fingerprint:
+                return
+            params["fingerprint"] = fingerprint
+        raise HistoryLimitReached()
 
     def history(self, address, count):
-        listed = {token.contract for token in self.load_tokens()}
-        token_rows = self._fetch_history(f"{address}/transactions/trc20", count)
+        rules = self.history_token_rules()
         # search_internal=false leaves out TRX moved by contracts, which has a different format.
-        native_rows = self._fetch_history(f"{address}/transactions", count, search_internal="false")
-
-        transactions = [self._parse_token_transfer(row, address, listed) for row in token_rows]
-        # A token transfer also appears as a plain contract call; keep only the token row.
-        token_tx_ids = {row["transaction_id"] for row in token_rows}
-        transactions += [
-            self._parse_native(row, address) for row in native_rows if row["txID"] not in token_tx_ids
+        native_rows = self._history_rows(f"{address}/transactions", search_internal="false")
+        token_rows = self._history_rows(f"{address}/transactions/trc20")
+        sources = [
+            (self._parse_token_transfer(row, address, rules) for row in token_rows),
+            (self._parse_native(row, address) for row in native_rows),
         ]
-        transactions.sort(key=lambda tx: tx.timestamp, reverse=True)
-        return transactions[:count]
+        return self.collect_history(sources, count)
 
-    @staticmethod
-    def _parse_token_transfer(row, address, listed):
+    def _parse_token_transfer(self, row, address, rules):
         info = row.get("token_info", {})
         sender, receiver = row["from"], row["to"]
         symbol = info.get("symbol", "TOKEN")
+        is_transfer = row.get("type") == "Transfer"
+        amount = Decimal(row["value"]).scaleb(-info.get("decimals", 0))
         return Transaction(
             timestamp=row["block_timestamp"] // 1000,
             direction=transfer_direction(address, sender, receiver),
             # An Approval's amount is a spending allowance, not money moved, so label it clearly.
-            kind=symbol if row.get("type") == "Transfer" else f"{symbol} {row.get('type')}",
+            kind=symbol if is_transfer else f"{symbol} {row.get('type')}",
             tx_id=row["transaction_id"],
-            amount=Decimal(row["value"]).scaleb(-info.get("decimals", 0)),
+            amount=amount,
             counterparty=receiver if sender == address else sender,
-            unlisted=info.get("address") not in listed,
+            # The minimum amount applies to transfers only: every approval of a listed token matters.
+            hidden=self.is_hidden_token(rules, info.get("address"), amount if is_transfer else None),
+            is_token_transfer=True,
         )
 
     @staticmethod
@@ -147,12 +159,12 @@ class TronChain(Chain):
         target = value.get("to_address") or value.get("receiver_address") or value.get("contract_address")
         receiver = _hex_to_address(target) if target else None
 
-        amount, unlisted = None, False
+        amount, hidden = None, False
         if contract_type == "TransferContract":
             kind, amount = "TRX", Decimal(value["amount"]).scaleb(-TRX_DECIMALS)
         elif contract_type == "TransferAssetContract":
-            # TRC10 token: its decimals aren't in the response, so this is the raw amount.
-            kind, amount, unlisted = f"TRC10 #{value['asset_name']}", Decimal(value["amount"]), True
+            # TRC10 tokens have no contract address to match against the token list.
+            kind, amount, hidden = f"TRC10 #{value['asset_name']}", Decimal(value["amount"]), True
         elif contract_type == "TriggerSmartContract":
             kind = "Contract call"
         else:
@@ -167,5 +179,6 @@ class TronChain(Chain):
             amount=amount,
             counterparty=receiver if sender == address else sender,
             success=status in (None, "SUCCESS"),
-            unlisted=unlisted,
+            hidden=hidden,
+            is_bare_call=contract_type == "TriggerSmartContract",
         )

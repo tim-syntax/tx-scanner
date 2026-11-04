@@ -4,7 +4,14 @@ import re
 import time
 from decimal import Decimal
 
-from .base import Chain, HistoryUnavailable, Transaction, transfer_direction
+from .base import (
+    MAX_HISTORY_PAGES,
+    Chain,
+    HistoryLimitReached,
+    HistoryUnavailable,
+    Transaction,
+    transfer_direction,
+)
 from .http import post_json
 from .settings import get_setting
 
@@ -23,9 +30,10 @@ MAX_PRICE_AGE_SECONDS = 3600
 NATIVE_DECIMALS = 18
 NODEREAL_KEY_NAME = "NODEREAL_API_KEY"
 NODEREAL_KEY_PLACEHOLDER = "your_nodereal_api_key_here"
+HISTORY_PAGE_SIZE = 100
 # nr_getAssetTransfers groups results by category, so each one is requested separately
-# to find the newest transactions overall.
-TRANSFER_CATEGORIES = ("external", "internal", "20")
+# to find the newest transactions overall. Tokens go first: see Chain.collect_history.
+TRANSFER_CATEGORIES = ("20", "external", "internal")
 
 
 def _hex_to_int(value):
@@ -104,19 +112,32 @@ class EvmChain(Chain):
     def tx_url(self, tx_id):
         return f"{self.explorer_tx_url}{tx_id}" if self.explorer_tx_url else tx_id
 
-    def _fetch_transfers(self, api_key, category, side, address, count):
-        """Fetch the newest transfers where address is the sender or receiver (side)."""
-        params = {"category": [category], "order": "desc", "maxCount": hex(count), side: address}
-        payload = {"jsonrpc": "2.0", "id": 1, "method": "nr_getAssetTransfers", "params": [params]}
-        try:
-            response = post_json(self.nodereal_url + api_key, payload, timeout=30)
-        except Exception as e:
-            # The key is part of the URL, so make sure it can never appear in an error message.
-            raise RuntimeError(str(e).replace(api_key, "<api key>")) from None
-        if "error" in response:
-            message = str(response["error"].get("message", response["error"]))
-            raise RuntimeError(message.replace(api_key, "<api key>"))
-        return response["result"].get("transfers") or []
+    def contract_key(self, contract):
+        return contract.lower()  # EVM addresses aren't case-sensitive
+
+    def _transfer_rows(self, api_key, category, side, address):
+        """Yield transfers newest first where address is the sender or receiver (side).
+
+        Further pages are requested only as they're needed.
+        """
+        params = {"category": [category], "order": "desc", "maxCount": hex(HISTORY_PAGE_SIZE), side: address}
+        for _ in range(MAX_HISTORY_PAGES):
+            payload = {"jsonrpc": "2.0", "id": 1, "method": "nr_getAssetTransfers", "params": [params]}
+            try:
+                response = post_json(self.nodereal_url + api_key, payload, timeout=30)
+            except Exception as e:
+                # The key is part of the URL, so make sure it can never appear in an error message.
+                raise RuntimeError(str(e).replace(api_key, "<api key>")) from None
+            if "error" in response:
+                message = str(response["error"].get("message", response["error"]))
+                raise RuntimeError(message.replace(api_key, "<api key>"))
+            transfers = response["result"].get("transfers") or []
+            yield from transfers
+            page_key = response["result"].get("pageKey")
+            if not transfers or not page_key:
+                return
+            params["pageKey"] = page_key
+        raise HistoryLimitReached()
 
     def history(self, address, count):
         if self.nodereal_url is None:
@@ -127,38 +148,30 @@ class EvmChain(Chain):
                 f"transaction history on {self.name} needs a NodeReal API key. "
                 f"Add {NODEREAL_KEY_NAME}=<your key> to the .env file."
             )
-        listed = {token.contract.lower() for token in self.load_tokens() if token.contract}
+        rules = self.history_token_rules()
+        sources = [
+            (
+                self._parse_transfer(row, address.lower(), rules)
+                for row in self._transfer_rows(api_key, category, side, address)
+            )
+            for category in TRANSFER_CATEGORIES
+            for side in ("fromAddress", "toAddress")
+        ]
+        return self.collect_history(sources, count)
 
-        rows = {}
-        for category in TRANSFER_CATEGORIES:
-            for side in ("fromAddress", "toAddress"):
-                for row in self._fetch_transfers(api_key, category, side, address, count):
-                    # A transfer to yourself comes back from both sides; keep it once.
-                    rows[row["hash"], row["category"], row.get("logIndex"), row.get("traceIndex")] = row
-
-        token_tx_hashes = {row["hash"] for row in rows.values() if row["category"] == "20"}
-        transactions = []
-        for row in rows.values():
-            # A token transfer also appears as a 0 BNB call; keep only the token row.
-            is_empty_call = row["category"] == "external" and _hex_to_int(row.get("value")) == 0
-            if not (is_empty_call and row["hash"] in token_tx_hashes):
-                transactions.append(self._parse_transfer(row, address.lower(), listed))
-        transactions.sort(key=lambda tx: tx.timestamp, reverse=True)
-        return transactions[:count]
-
-    @staticmethod
-    def _parse_transfer(row, address, listed):
+    def _parse_transfer(self, row, address, rules):
         """Convert a NodeReal transfer. address must be lowercase, as NodeReal's addresses are."""
         sender, receiver = row["from"].lower(), row["to"].lower()
         direction = transfer_direction(address, sender, receiver)
         value = _hex_to_int(row.get("value"))
+        is_token = row["category"] == "20"
 
-        unlisted = False
-        if row["category"] == "20":
+        hidden = False
+        if is_token:
             kind = row.get("asset") or row.get("name") or "TOKEN"
             decimals = _token_decimals(row.get("decimal"))
             amount = None if decimals is None else Decimal(value).scaleb(-decimals)
-            unlisted = (row.get("contractAddress") or "").lower() not in listed
+            hidden = self.is_hidden_token(rules, self.contract_key(row.get("contractAddress") or ""), amount)
         elif row["category"] == "external" and value == 0 and direction != "IN":
             kind, amount = "Contract call", None
         else:
@@ -172,5 +185,10 @@ class EvmChain(Chain):
             amount=amount,
             counterparty=receiver if sender == address else sender,
             success=row.get("receiptsStatus") != 0,
-            unlisted=unlisted,
+            hidden=hidden,
+            is_token_transfer=is_token,
+            # A token transfer also appears as a 0 BNB call; only the token row is kept.
+            is_bare_call=row["category"] == "external" and value == 0,
+            # A transfer to yourself comes back from both sides; it's kept once.
+            row_id=f"{row['hash']}:{row['category']}:{row.get('logIndex')}:{row.get('traceIndex')}",
         )
