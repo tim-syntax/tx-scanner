@@ -194,6 +194,8 @@
   }
 
   .empty { color: var(--muted); padding: 8px 0; }
+  .loading { display: flex; align-items: center; gap: 10px; color: var(--muted); }
+  .loading .spinner { display: inline-block; }
   .footer-note { color: var(--muted); font-size: 13px; margin-top: 14px; }
   [hidden] { display: none !important; }
 </style>
@@ -271,7 +273,11 @@
     results: $("results"), recent: $("recent"),
   };
 
-  const state = { chains: {}, mode: "balances", chipsFor: null, detected: null, request: null, maxView: 200 };
+  const state = {
+    chains: {}, mode: "balances", chipsFor: null, detected: null, maxView: 200,
+    results: { balances: null, history: null }, // last result per tab
+    pending: { balances: null, history: null }, // request in flight per tab
+  };
   const RECENT_KEY = "tx-scanner:recent";
 
   // ---- small helpers -------------------------------------------------
@@ -356,6 +362,15 @@
     detectTimer = setTimeout(detectChain, 200);
   }
 
+  // A pasted address is complete, so check it right away instead of waiting for the button.
+  function onAddressPaste() {
+    clearTimeout(detectTimer);
+    setTimeout(async () => {
+      await detectChain();
+      if (looksValid() && buildRequest(state.mode).ok) runCheck(state.mode);
+    }, 0);
+  }
+
   async function detectChain() {
     const address = els.address.value.trim();
     if (!address) {
@@ -376,6 +391,7 @@
       }
     }
     renderChips();
+    syncButton();
   }
 
   function setAddressHint(text, bad) {
@@ -409,14 +425,37 @@
   function selectedNumbers() { return chipBoxes().filter((b) => b.checked).map((b) => Number(b.value)); }
 
   // ---- mode tabs ----------------------------------------------------
-  function setMode(mode) {
+  const MODES = {
+    balances: { label: "Check balances", busy: "Reading balances…", render: (d) => renderBalances(d) },
+    history: { label: "Show history", busy: "Searching transactions…", render: (d) => renderHistory(d) },
+  };
+
+  function setMode(mode, { run = true } = {}) {
     state.mode = mode;
     const isHistory = mode === "history";
     els.tabBalances.setAttribute("aria-selected", String(!isHistory));
     els.tabHistory.setAttribute("aria-selected", String(isHistory));
     els.panelBalances.hidden = isHistory;
     els.panelHistory.hidden = !isHistory;
-    els.submitLabel.textContent = isHistory ? "Show history" : "Check balances";
+    if (run) showMode(mode);
+  }
+
+  /** Show this tab's result for the current inputs: from earlier, still loading, or check now. */
+  function showMode(mode) {
+    const request = buildRequest(mode);
+    const cached = state.results[mode];
+    const pending = state.pending[mode];
+    if (request.ok && cached && cached.key === request.key) {
+      showResult(mode, cached);
+    } else if (request.ok && pending && pending.key === request.key) {
+      showLoading(mode);
+    } else if (request.ok && looksValid()) {
+      runCheck(mode);
+    } else {
+      els.results.replaceChildren();
+      els.status.textContent = "";
+    }
+    syncButton();
   }
 
   function onTabKey(event) {
@@ -434,18 +473,16 @@
   }
 
   // ---- running a check ----------------------------------------------
-  async function onSubmit(event) {
-    event.preventDefault();
-    const address = els.address.value.trim();
-    if (!address) {
-      setAddressHint("Enter a wallet address.", true);
-      els.address.focus();
-      return;
-    }
+  // Each tab keeps its own last result and its own request, so switching tabs never
+  // throws away a result or cancels a check that is still loading.
 
+  /** The request the form describes for a tab: {ok, key, path, params, url} or {ok: false, error}. */
+  function buildRequest(mode) {
+    const address = els.address.value.trim();
+    if (!address) return { ok: false, error: "Enter a wallet address." };
     const chain = els.chain.value;
     let path, params, url;
-    if (state.mode === "history") {
+    if (mode === "history") {
       const view = String(els.view.value).trim();
       path = "/api/history";
       params = { address, chain, view };
@@ -455,42 +492,94 @@
       const numbers = selectedNumbers();
       const all = numbers.length === chipBoxes().length;
       if (!contract && chipBoxes().length && !numbers.length) {
-        showError("Select at least one token, or enter a token contract.");
-        return;
+        return { ok: false, error: "Select at least one token, or enter a token contract." };
       }
       path = "/api/balances";
       params = contract ? { address, chain, token: contract } : { address, chain, tokens: all ? "" : numbers.join(",") };
       url = { address, chain, token: params.token, tokens: params.tokens };
     }
-
-    if (state.request) state.request.abort();
-    const controller = new AbortController();
-    state.request = controller;
-    setBusy(true);
-    const started = performance.now();
-    try {
-      const data = await api(path, params, controller.signal);
-      if (state.request !== controller) return;
-      saveRecent(address);
-      writeUrl(url);
-      if (state.mode === "history") renderHistory(data); else renderBalances(data);
-      els.status.textContent = `Done in ${((performance.now() - started) / 1000).toFixed(1)} s`;
-    } catch (e) {
-      if (e.name === "AbortError") return;
-      showError(e.message);
-      els.status.textContent = "";
-    } finally {
-      if (state.request === controller) {
-        state.request = null;
-        setBusy(false);
-      }
-    }
+    return { ok: true, key: `${path}?${new URLSearchParams(params)}`, path, params, url };
   }
 
-  function setBusy(busy) {
+  /** Whether the address is worth checking without the user pressing the button. */
+  function looksValid() {
+    return !!(els.chain.value || state.detected);
+  }
+
+  function onSubmit(event) {
+    event.preventDefault();
+    const request = buildRequest(state.mode);
+    if (!request.ok) {
+      if (!els.address.value.trim()) {
+        setAddressHint(request.error, true);
+        els.address.focus();
+      } else {
+        showError(request.error);
+      }
+      return;
+    }
+    runCheck(state.mode);
+  }
+
+  async function runCheck(mode) {
+    const request = buildRequest(mode);
+    if (!request.ok) return;
+    if (state.pending[mode]) state.pending[mode].controller.abort();
+    const controller = new AbortController();
+    const pending = { key: request.key, controller };
+    state.pending[mode] = pending;
+    if (state.mode === mode) showLoading(mode);
+
+    const started = performance.now();
+    let result;
+    try {
+      const data = await api(request.path, request.params, controller.signal);
+      result = { key: request.key, data, url: request.url, seconds: (performance.now() - started) / 1000 };
+      saveRecent(request.params.address);
+    } catch (e) {
+      if (e.name === "AbortError") return;
+      result = { key: request.key, error: e.message };
+    } finally {
+      if (state.pending[mode] === pending) state.pending[mode] = null;
+    }
+    result.at = new Date();
+    state.results[mode] = result;
+    // Only draw it if the user is still on this tab and hasn't changed the inputs meanwhile.
+    if (state.mode === mode && buildRequest(mode).key === result.key) showResult(mode, result, true);
+    syncButton();
+  }
+
+  function showResult(mode, result, fresh) {
+    if (result.error) {
+      showError(result.error);
+      els.status.textContent = "";
+      return;
+    }
+    writeUrl(result.url);
+    MODES[mode].render(result.data);
+    els.status.textContent = fresh
+      ? `Done in ${result.seconds.toFixed(1)} s`
+      : `Checked at ${result.at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+  }
+
+  function showLoading(mode) {
+    els.results.replaceChildren(el("div", { class: "card loading" },
+      el("span", { class: "spinner" }), MODES[mode].busy));
+    els.status.textContent = "";
+    syncButton();
+  }
+
+  /** Button: busy while this tab loads; "Refresh" when its result matches the inputs. */
+  function syncButton() {
+    const mode = state.mode;
+    const busy = !!state.pending[mode];
+    const request = buildRequest(mode);
+    const cached = state.results[mode];
     els.submit.disabled = busy;
     els.submit.setAttribute("aria-busy", String(busy));
-    if (busy) els.status.textContent = state.mode === "history" ? "Searching transactions…" : "Reading balances…";
+    els.submitLabel.textContent = busy
+      ? "Checking…"
+      : request.ok && cached && cached.key === request.key ? "Refresh" : MODES[mode].label;
   }
 
   function showError(message) {
@@ -566,13 +655,16 @@
   async function init() {
     renderRecent(readRecent());
     els.address.addEventListener("input", onAddressInput);
+    els.address.addEventListener("paste", onAddressPaste);
+    els.form.addEventListener("input", syncButton);
+    els.form.addEventListener("change", syncButton);
     els.chain.addEventListener("change", detectChain);
     els.tabBalances.addEventListener("click", () => setMode("balances"));
     els.tabHistory.addEventListener("click", () => setMode("history"));
     els.tabBalances.addEventListener("keydown", onTabKey);
     els.tabHistory.addEventListener("keydown", onTabKey);
-    $("select-all").addEventListener("click", () => chipBoxes().forEach((b) => { b.checked = true; }));
-    $("select-none").addEventListener("click", () => chipBoxes().forEach((b) => { b.checked = false; }));
+    $("select-all").addEventListener("click", () => { chipBoxes().forEach((b) => { b.checked = true; }); syncButton(); });
+    $("select-none").addEventListener("click", () => { chipBoxes().forEach((b) => { b.checked = false; }); syncButton(); });
     els.form.addEventListener("submit", onSubmit);
 
     try {
@@ -594,13 +686,13 @@
     if (q.get("chain") && state.chains[q.get("chain")]) els.chain.value = q.get("chain");
     if (q.get("view")) els.view.value = q.get("view");
     if (q.get("token")) { els.contract.value = q.get("token"); els.customDetails.open = true; }
-    setMode(q.get("mode") === "history" ? "history" : "balances");
+    setMode(q.get("mode") === "history" ? "history" : "balances", { run: false });
     if (q.get("address")) {
       els.address.value = q.get("address");
       await detectChain();
       const picked = (q.get("tokens") || "").split(",").map(Number).filter(Boolean);
       if (picked.length) renderChips(picked);
-      els.form.requestSubmit();
+      runCheck(state.mode);
     }
   }
 
