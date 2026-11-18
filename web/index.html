@@ -1,0 +1,611 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tx-scanner</title>
+<meta name="description" content="Wallet balances and transaction history for BNB Smart Chain and Tron.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232f6fed'/%3E%3Cpath d='M9 11h14M9 16h10M9 21h14' stroke='white' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --surface: #ffffff;
+    --surface-2: #f0f2f5;
+    --border: #dde1e7;
+    --text: #1b1f26;
+    --muted: #5f6877;
+    --accent: #2f6fed;
+    --accent-text: #ffffff;
+    --accent-soft: #e6eefd;
+    --in: #137a45;
+    --in-soft: #e3f4ea;
+    --out: #b4391c;
+    --out-soft: #fbe9e4;
+    --self: #5b5f6b;
+    --self-soft: #eceef1;
+    --warn-bg: #fff6e0;
+    --warn-border: #f0d48a;
+    --warn-text: #6b4c00;
+    --error: #b42318;
+    --error-soft: #fdecea;
+    --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 1px 3px rgba(16, 24, 40, .08);
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1216;
+      --surface: #171b21;
+      --surface-2: #1f242c;
+      --border: #2c333d;
+      --text: #e7eaee;
+      --muted: #98a1ae;
+      --accent: #5b8ef5;
+      --accent-text: #0b1220;
+      --accent-soft: #1c2a45;
+      --in: #4cc584;
+      --in-soft: #16301f;
+      --out: #f08a6c;
+      --out-soft: #3a1e17;
+      --self: #aab1bd;
+      --self-soft: #262b33;
+      --warn-bg: #2d2611;
+      --warn-border: #5c4a17;
+      --warn-text: #f0d48a;
+      --error: #ff8a7a;
+      --error-soft: #3a1a17;
+      --shadow: none;
+      color-scheme: dark;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  main { max-width: 880px; margin: 0 auto; padding: 28px 16px 64px; }
+
+  header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+  header h1 { font-size: 22px; margin: 0; letter-spacing: -.01em; }
+  header p { margin: 0; color: var(--muted); }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    padding: 18px;
+  }
+
+  label.field { display: block; font-weight: 600; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  input[type=text], input[type=number], select {
+    width: 100%;
+    font: inherit;
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 9px 11px;
+    min-height: 40px;
+  }
+  input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  .mono { font-family: var(--mono); font-size: 13.5px; }
+
+  .row { display: grid; grid-template-columns: 1fr 190px; gap: 12px; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; } }
+
+  .hint { font-size: 13px; color: var(--muted); margin-top: 6px; min-height: 20px; }
+  .hint.bad { color: var(--error); }
+
+  .tabs { display: inline-flex; background: var(--surface-2); border-radius: 9px; padding: 3px; margin: 16px 0 14px; }
+  .tabs button {
+    font: inherit; font-weight: 600; font-size: 14px;
+    border: 0; background: transparent; color: var(--muted);
+    padding: 7px 16px; border-radius: 7px; cursor: pointer;
+  }
+  .tabs button[aria-selected=true] { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { position: relative; }
+  .chip input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+  .chip span {
+    display: inline-flex; align-items: center; gap: 6px;
+    border: 1px solid var(--border); border-radius: 999px;
+    padding: 4px 11px; font-size: 13.5px; user-select: none;
+  }
+  .chip span small { color: var(--muted); font-size: 12px; }
+  .chip input:checked + span { background: var(--accent-soft); border-color: var(--accent); }
+  .chip input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .chip-actions { display: flex; gap: 12px; margin: 8px 0 14px; font-size: 13px; }
+  .linkish { font: inherit; border: 0; background: none; color: var(--accent); padding: 0; cursor: pointer; }
+
+  details { margin-top: 4px; }
+  summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+  details[open] summary { margin-bottom: 8px; }
+
+  .actions { display: flex; align-items: center; gap: 12px; margin-top: 18px; flex-wrap: wrap; }
+  .btn {
+    font: inherit; font-weight: 600;
+    background: var(--accent); color: var(--accent-text);
+    border: 0; border-radius: 8px; padding: 10px 20px; min-height: 42px; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .btn:disabled { opacity: .6; cursor: progress; }
+  .spinner {
+    width: 15px; height: 15px; border-radius: 50%;
+    border: 2px solid currentColor; border-right-color: transparent;
+    animation: spin .7s linear infinite; display: none;
+  }
+  .btn[aria-busy=true] .spinner { display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2s; } }
+
+  #results { margin-top: 20px; }
+  #results:empty { display: none; }
+  .result-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; margin-bottom: 12px; }
+  .result-head h2 { font-size: 17px; margin: 0; }
+  .result-head .addr { color: var(--muted); word-break: break-all; }
+
+  .alert { border-radius: 10px; padding: 11px 14px; font-size: 14px; margin-bottom: 12px; }
+  .alert.error { background: var(--error-soft); color: var(--error); border: 1px solid transparent; }
+  .alert.warn { background: var(--warn-bg); color: var(--warn-text); border: 1px solid var(--warn-border); }
+
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; }
+  tr:last-child td { border-bottom: 0; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.idx { color: var(--muted); width: 36px; }
+  td.amount { font-family: var(--mono); font-size: 14px; word-break: break-all; }
+  .zero { color: var(--muted); }
+  .cell-error { color: var(--error); font-size: 13.5px; text-align: right; }
+  .usd-note { color: var(--muted); font-size: 13px; }
+
+  .tx-list { list-style: none; margin: 0; padding: 0; }
+  .tx { display: grid; grid-template-columns: 58px 1fr auto; gap: 4px 12px; padding: 12px 4px; border-bottom: 1px solid var(--border); }
+  .tx:last-child { border-bottom: 0; }
+  .dir { font-size: 12px; font-weight: 700; letter-spacing: .03em; border-radius: 6px; padding: 3px 0; text-align: center; height: fit-content; }
+  .dir.IN { background: var(--in-soft); color: var(--in); }
+  .dir.OUT { background: var(--out-soft); color: var(--out); }
+  .dir.SELF { background: var(--self-soft); color: var(--self); }
+  .tx-main { min-width: 0; }
+  .tx-amount { font-weight: 600; font-variant-numeric: tabular-nums; word-break: break-all; }
+  .tx-amount .kind { font-weight: 500; }
+  .tx-party { color: var(--muted); font-size: 13px; word-break: break-all; }
+  .tx-party .mono { font-size: 12.5px; }
+  .tx-side { text-align: right; font-size: 13px; white-space: nowrap; }
+  .tx-side time { display: block; }
+  .tx-side .utc { display: block; color: var(--muted); font-size: 12px; }
+  .tx-side a { display: inline-block; margin-top: 2px; color: var(--accent); text-decoration: none; }
+  .tx-side a:hover { text-decoration: underline; }
+  .badge-failed { display: inline-block; font-size: 11px; font-weight: 700; color: var(--error); background: var(--error-soft); border-radius: 5px; padding: 1px 6px; margin-left: 6px; vertical-align: 1px; }
+  @media (max-width: 560px) {
+    .tx { grid-template-columns: 50px 1fr; }
+    .tx-side { grid-column: 2; text-align: left; display: flex; gap: 10px; flex-wrap: wrap; white-space: normal; }
+    .tx-side time, .tx-side .utc { display: inline; }
+    .tx-side a { margin-top: 0; }
+  }
+
+  .empty { color: var(--muted); padding: 8px 0; }
+  .footer-note { color: var(--muted); font-size: 13px; margin-top: 14px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>tx-scanner</h1>
+    <p>Wallet balances and transaction history</p>
+  </header>
+
+  <form class="card" id="form" novalidate>
+    <div class="row">
+      <div>
+        <label class="field" for="address">Wallet address</label>
+        <input type="text" id="address" class="mono" list="recent" placeholder="0x… or T…" autocomplete="off" autocapitalize="off" spellcheck="false" required>
+        <datalist id="recent"></datalist>
+        <div class="hint" id="address-hint" aria-live="polite"></div>
+      </div>
+      <div>
+        <label class="field" for="chain">Chain</label>
+        <select id="chain"><option value="">Detect from address</option></select>
+      </div>
+    </div>
+
+    <div class="tabs" role="tablist" aria-label="What to check">
+      <button type="button" role="tab" id="tab-balances" aria-controls="panel-balances" aria-selected="true">Balances</button>
+      <button type="button" role="tab" id="tab-history" aria-controls="panel-history" aria-selected="false">History</button>
+    </div>
+
+    <div id="panel-balances" role="tabpanel" aria-labelledby="tab-balances">
+      <label class="field" id="tokens-label">Tokens</label>
+      <div class="chips" id="token-chips" role="group" aria-labelledby="tokens-label">
+        <span class="hint">Enter an address to see its chain's token list.</span>
+      </div>
+      <div class="chip-actions" id="chip-actions" hidden>
+        <button type="button" class="linkish" id="select-all">Select all</button>
+        <button type="button" class="linkish" id="select-none">Clear</button>
+      </div>
+      <details id="custom-details">
+        <summary>Check a token that isn't in the list</summary>
+        <label class="field" for="contract">Token contract address</label>
+        <input type="text" id="contract" class="mono" placeholder="Contract address" autocomplete="off" autocapitalize="off" spellcheck="false">
+        <div class="hint">When filled in, only this token is checked. Its symbol and decimals are read from the contract.</div>
+      </details>
+    </div>
+
+    <div id="panel-history" role="tabpanel" aria-labelledby="tab-history" hidden>
+      <label class="field" for="view">Number of transactions</label>
+      <input type="number" id="view" min="1" max="200" value="10" inputmode="numeric" style="max-width: 140px">
+      <div class="hint">Unlisted tokens and tiny USDT transfers are filtered out before counting.</div>
+    </div>
+
+    <div class="actions">
+      <button type="submit" class="btn" id="submit"><span class="spinner" aria-hidden="true"></span><span id="submit-label">Check balances</span></button>
+      <span class="hint" id="status" aria-live="polite"></span>
+    </div>
+  </form>
+
+  <section id="results" aria-live="polite"></section>
+</main>
+
+<script>
+(() => {
+  "use strict";
+
+  const $ = (id) => document.getElementById(id);
+  const els = {
+    form: $("form"), address: $("address"), addressHint: $("address-hint"), chain: $("chain"),
+    tabBalances: $("tab-balances"), tabHistory: $("tab-history"),
+    panelBalances: $("panel-balances"), panelHistory: $("panel-history"),
+    chips: $("token-chips"), chipActions: $("chip-actions"), contract: $("contract"),
+    customDetails: $("custom-details"), view: $("view"),
+    submit: $("submit"), submitLabel: $("submit-label"), status: $("status"),
+    results: $("results"), recent: $("recent"),
+  };
+
+  const state = { chains: {}, mode: "balances", chipsFor: null, detected: null, request: null, maxView: 200 };
+  const RECENT_KEY = "tx-scanner:recent";
+
+  // ---- small helpers -------------------------------------------------
+  function el(tag, attrs, ...children) {
+    const node = document.createElement(tag);
+    for (const [key, value] of Object.entries(attrs || {})) {
+      if (value == null || value === false) continue;
+      if (key === "class") node.className = value;
+      else if (key === "text") node.textContent = value;
+      else node.setAttribute(key, value === true ? "" : value);
+    }
+    for (const child of children) {
+      if (child == null || child === false) continue;
+      node.append(child instanceof Node ? child : document.createTextNode(String(child)));
+    }
+    return node;
+  }
+
+  async function api(path, params, signal) {
+    const query = new URLSearchParams();
+    for (const [k, v] of Object.entries(params || {})) if (v !== "" && v != null) query.set(k, v);
+    let response;
+    try {
+      response = await fetch(`${path}?${query}`, { signal, headers: { Accept: "application/json" } });
+    } catch (e) {
+      if (e.name === "AbortError") throw e;
+      throw new Error("Couldn't reach the server. Check your connection and try again.");
+    }
+    let body = null;
+    try { body = await response.json(); } catch (_) { /* not JSON */ }
+    if (!response.ok) {
+      let message = body && body.detail;
+      if (Array.isArray(message)) message = message.map((d) => d.msg).join("; ");
+      if (!message) message = response.status === 504
+        ? "The request took too long. Try fewer transactions."
+        : `Request failed (HTTP ${response.status}).`;
+      throw new Error(capitalize(message));
+    }
+    return body;
+  }
+
+  const capitalize = (s) => s ? s[0].toUpperCase() + s.slice(1) : s;
+
+  function timeAgo(timestamp) {
+    let minutes = Math.floor(Math.max(0, Date.now() / 1000 - timestamp) / 60);
+    if (minutes < 1) return "just now";
+    let hours = Math.floor(minutes / 60); minutes %= 60;
+    const days = Math.floor(hours / 24); hours %= 24;
+    if (days) return hours ? `${days} d ${hours} h ago` : `${days} d ago`;
+    if (hours) return minutes ? `${hours} h ${minutes} min ago` : `${hours} h ago`;
+    return `${minutes} min ago`;
+  }
+
+  function formatAmount(text) {
+    // "1234567.891" -> "1,234,567.891" without losing precision (amounts are exact decimal strings).
+    if (text == null) return "";
+    const [whole, fraction] = text.split(".");
+    const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    return fraction ? `${grouped}.${fraction}` : grouped;
+  }
+
+  function readRecent() {
+    try { return JSON.parse(localStorage.getItem(RECENT_KEY)) || []; } catch (_) { return []; }
+  }
+  function saveRecent(address) {
+    const list = [address, ...readRecent().filter((a) => a !== address)].slice(0, 8);
+    try { localStorage.setItem(RECENT_KEY, JSON.stringify(list)); } catch (_) { /* storage blocked */ }
+    renderRecent(list);
+  }
+  function renderRecent(list) {
+    els.recent.replaceChildren(...list.map((a) => el("option", { value: a })));
+  }
+
+  // ---- chain + token picker -----------------------------------------
+  function activeChainKey() {
+    return els.chain.value || state.detected;
+  }
+
+  let detectTimer = null;
+  function onAddressInput() {
+    clearTimeout(detectTimer);
+    detectTimer = setTimeout(detectChain, 200);
+  }
+
+  async function detectChain() {
+    const address = els.address.value.trim();
+    if (!address) {
+      state.detected = null;
+      setAddressHint("");
+    } else {
+      try {
+        state.detected = (await api("/api/detect", { address })).chain;
+      } catch (_) {
+        state.detected = null;
+      }
+      if (els.chain.value) {
+        setAddressHint("");
+      } else if (state.detected) {
+        setAddressHint(`Detected: ${state.chains[state.detected].name}`);
+      } else {
+        setAddressHint("This doesn't look like a BSC (0x…) or Tron (T…) address.", true);
+      }
+    }
+    renderChips();
+  }
+
+  function setAddressHint(text, bad) {
+    els.addressHint.textContent = text;
+    els.addressHint.classList.toggle("bad", !!bad);
+  }
+
+  function renderChips(selected) {
+    const key = activeChainKey();
+    if (key === state.chipsFor && !selected) return;
+    const chain = state.chains[key];
+    if (!chain) {
+      state.chipsFor = null;
+      els.chips.replaceChildren(el("span", { class: "hint", text: "Enter an address to see its chain's token list." }));
+      els.chipActions.hidden = true;
+      return;
+    }
+    // Keep the user's picks when the list is re-rendered for the same chain.
+    const keep = selected || (key === state.chipsFor ? selectedNumbers() : null);
+    state.chipsFor = key;
+    els.chips.replaceChildren(...chain.tokens.map((t) => {
+      const checked = keep ? keep.includes(t.number) : true;
+      return el("label", { class: "chip", title: t.contract || `${chain.name} native coin` },
+        el("input", { type: "checkbox", value: t.number, checked }),
+        el("span", {}, el("small", { text: `${t.number}.` }), t.symbol));
+    }));
+    els.chipActions.hidden = false;
+  }
+
+  function chipBoxes() { return [...els.chips.querySelectorAll("input[type=checkbox]")]; }
+  function selectedNumbers() { return chipBoxes().filter((b) => b.checked).map((b) => Number(b.value)); }
+
+  // ---- mode tabs ----------------------------------------------------
+  function setMode(mode) {
+    state.mode = mode;
+    const isHistory = mode === "history";
+    els.tabBalances.setAttribute("aria-selected", String(!isHistory));
+    els.tabHistory.setAttribute("aria-selected", String(isHistory));
+    els.panelBalances.hidden = isHistory;
+    els.panelHistory.hidden = !isHistory;
+    els.submitLabel.textContent = isHistory ? "Show history" : "Check balances";
+  }
+
+  function onTabKey(event) {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    const next = state.mode === "history" ? els.tabBalances : els.tabHistory;
+    next.focus();
+    next.click();
+  }
+
+  // ---- URL state (shareable / bookmarkable checks) -------------------
+  function writeUrl(params) {
+    const query = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) if (v) query.set(k, v);
+    history.replaceState(null, "", `${location.pathname}?${query}`);
+  }
+
+  // ---- running a check ----------------------------------------------
+  async function onSubmit(event) {
+    event.preventDefault();
+    const address = els.address.value.trim();
+    if (!address) {
+      setAddressHint("Enter a wallet address.", true);
+      els.address.focus();
+      return;
+    }
+
+    const chain = els.chain.value;
+    let path, params, url;
+    if (state.mode === "history") {
+      const view = String(els.view.value).trim();
+      path = "/api/history";
+      params = { address, chain, view };
+      url = { address, chain, mode: "history", view: view !== "10" ? view : "" };
+    } else {
+      const contract = els.contract.value.trim();
+      const numbers = selectedNumbers();
+      const all = numbers.length === chipBoxes().length;
+      if (!contract && chipBoxes().length && !numbers.length) {
+        showError("Select at least one token, or enter a token contract.");
+        return;
+      }
+      path = "/api/balances";
+      params = contract ? { address, chain, token: contract } : { address, chain, tokens: all ? "" : numbers.join(",") };
+      url = { address, chain, token: params.token, tokens: params.tokens };
+    }
+
+    if (state.request) state.request.abort();
+    const controller = new AbortController();
+    state.request = controller;
+    setBusy(true);
+    const started = performance.now();
+    try {
+      const data = await api(path, params, controller.signal);
+      if (state.request !== controller) return;
+      saveRecent(address);
+      writeUrl(url);
+      if (state.mode === "history") renderHistory(data); else renderBalances(data);
+      els.status.textContent = `Done in ${((performance.now() - started) / 1000).toFixed(1)} s`;
+    } catch (e) {
+      if (e.name === "AbortError") return;
+      showError(e.message);
+      els.status.textContent = "";
+    } finally {
+      if (state.request === controller) {
+        state.request = null;
+        setBusy(false);
+      }
+    }
+  }
+
+  function setBusy(busy) {
+    els.submit.disabled = busy;
+    els.submit.setAttribute("aria-busy", String(busy));
+    if (busy) els.status.textContent = state.mode === "history" ? "Searching transactions…" : "Reading balances…";
+  }
+
+  function showError(message) {
+    els.results.replaceChildren(el("div", { class: "alert error", role: "alert", text: message }));
+  }
+
+  function resultHead(title, data) {
+    return el("div", { class: "result-head" },
+      el("h2", { text: `${title} · ${data.chain_name}` }),
+      el("span", { class: "addr mono", text: data.address }));
+  }
+
+  function renderBalances(data) {
+    const rows = data.balances.map((b) => {
+      let amountCell;
+      if (b.error) {
+        amountCell = el("td", { class: "cell-error" }, `Error: ${b.error}`);
+      } else {
+        amountCell = el("td", { class: "amount num" + (Number(b.amount) === 0 ? " zero" : "") }, formatAmount(b.amount));
+      }
+      let usdCell;
+      if (b.usd != null) usdCell = el("td", { class: "num" }, `$${formatAmount(b.usd)}`);
+      else if (b.usd_error) usdCell = el("td", { class: "num usd-note", title: b.usd_error }, "unavailable");
+      else usdCell = el("td", { class: "num usd-note" }, b.native ? "" : "—");
+      return el("tr", {},
+        el("td", { class: "idx" }, b.number != null ? `${b.number}.` : ""),
+        el("td", { title: b.contract || "Native coin" }, b.symbol),
+        amountCell, usdCell);
+    });
+    els.results.replaceChildren(el("div", { class: "card" },
+      resultHead("Balances", data),
+      el("table", {},
+        el("thead", {}, el("tr", {},
+          el("th", {}),
+          el("th", {}, "Token"), el("th", { class: "num" }, "Balance"), el("th", { class: "num" }, "USD"))),
+        el("tbody", {}, ...rows)),
+      el("p", { class: "footer-note", text: "USD values are shown for the native coin only, from Chainlink price feeds." })));
+  }
+
+  function renderHistory(data) {
+    const card = el("div", { class: "card" }, resultHead("History", data));
+    card.append(el("div", { class: "alert warn" },
+      el("strong", {}, "Never copy an address from this history to send money. "),
+      "Scammers send tiny amounts from look-alike addresses so you'll paste the wrong one."));
+
+    if (!data.transactions.length) {
+      card.append(el("p", { class: "empty", text: data.finished ? "No transactions found." : `No transactions found. ${data.note}` }));
+    } else {
+      const items = data.transactions.map((tx) => {
+        const amount = el("div", { class: "tx-amount" });
+        if (tx.amount != null) amount.append(`${formatAmount(tx.amount)} `);
+        amount.append(el("span", { class: "kind", text: tx.kind }));
+        if (!tx.success) amount.append(el("span", { class: "badge-failed", text: "FAILED" }));
+        const party = tx.counterparty
+          ? el("div", { class: "tx-party" }, tx.direction === "IN" ? "from " : "to ", el("span", { class: "mono", text: tx.counterparty }))
+          : null;
+        const when = new Date(tx.timestamp * 1000);
+        return el("li", { class: "tx" },
+          el("span", { class: `dir ${tx.direction}`, text: tx.direction }),
+          el("div", { class: "tx-main" }, amount, party),
+          el("div", { class: "tx-side" },
+            el("time", { datetime: when.toISOString(), title: when.toLocaleString(), text: timeAgo(tx.timestamp) }),
+            el("span", { class: "utc", text: `${tx.time_utc} UTC` }),
+            el("a", { href: tx.url, target: "_blank", rel: "noopener noreferrer" }, "Explorer ↗")));
+      });
+      card.append(el("ol", { class: "tx-list" }, ...items));
+      if (!data.finished) card.append(el("p", { class: "footer-note", text: data.note }));
+    }
+    els.results.replaceChildren(card);
+  }
+
+  // ---- start --------------------------------------------------------
+  async function init() {
+    renderRecent(readRecent());
+    els.address.addEventListener("input", onAddressInput);
+    els.chain.addEventListener("change", detectChain);
+    els.tabBalances.addEventListener("click", () => setMode("balances"));
+    els.tabHistory.addEventListener("click", () => setMode("history"));
+    els.tabBalances.addEventListener("keydown", onTabKey);
+    els.tabHistory.addEventListener("keydown", onTabKey);
+    $("select-all").addEventListener("click", () => chipBoxes().forEach((b) => { b.checked = true; }));
+    $("select-none").addEventListener("click", () => chipBoxes().forEach((b) => { b.checked = false; }));
+    els.form.addEventListener("submit", onSubmit);
+
+    try {
+      const info = await api("/api/chains");
+      for (const chain of info.chains) {
+        state.chains[chain.key] = chain;
+        els.chain.append(el("option", { value: chain.key, text: chain.name }));
+      }
+      state.maxView = info.max_view;
+      els.view.max = info.max_view;
+      els.view.value = info.default_view;
+    } catch (e) {
+      showError(`Couldn't load the chain list: ${e.message}`);
+      return;
+    }
+
+    // Restore a check from the URL, e.g. ?address=T...&mode=history&view=20
+    const q = new URLSearchParams(location.search);
+    if (q.get("chain") && state.chains[q.get("chain")]) els.chain.value = q.get("chain");
+    if (q.get("view")) els.view.value = q.get("view");
+    if (q.get("token")) { els.contract.value = q.get("token"); els.customDetails.open = true; }
+    setMode(q.get("mode") === "history" ? "history" : "balances");
+    if (q.get("address")) {
+      els.address.value = q.get("address");
+      await detectChain();
+      const picked = (q.get("tokens") || "").split(",").map(Number).filter(Boolean);
+      if (picked.length) renderChips(picked);
+      els.form.requestSubmit();
+    }
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>

@@ -14,15 +14,22 @@ Token numbers are shown next to each balance in the default output.
 """
 
 import sys
-import time
-from datetime import datetime, timezone
+from decimal import Decimal
 
-from chains import CHAINS, ConfigError, HistoryUnavailable, Token, detect_chain
+from scanner import (
+    DEFAULT_VIEW,
+    ScanError,
+    get_assets,
+    get_chain,
+    get_history,
+    load_tokens,
+    parse_list,
+    parse_view,
+    resolve_chain,
+)
 
 OPTIONS = ("list", "token", "chain", "mode", "view")
 MODES = ("default", "history")
-DEFAULT_VIEW = 10
-MAX_VIEW = 200
 
 # Avoid UnicodeEncodeError on Windows consoles/redirects when a token symbol has non-ASCII chars.
 if hasattr(sys.stdout, "reconfigure"):
@@ -55,135 +62,58 @@ def parse_args(argv):
     return address, options
 
 
-def parse_list(value, count):
-    """'1,3,4' -> [1, 3, 4], each between 1 and count."""
-    numbers = []
-    for part in value.split(","):
-        part = part.strip()
-        if not part:
-            continue
-        if not part.isdigit() or not 1 <= int(part) <= count:
-            fail(f"invalid token number '{part}' in list=. Use numbers from 1 to {count}.")
-        if int(part) not in numbers:
-            numbers.append(int(part))
-    if not numbers:
-        fail("list= is empty. Example: list=1,3,4")
-    return numbers
-
-
-def parse_view(value):
-    if not value.isdigit() or not 1 <= int(value) <= MAX_VIEW:
-        fail(f"invalid view '{value}'. Use a number from 1 to {MAX_VIEW}.")
-    return int(value)
-
-
-def safe_text(text):
-    """Token names are chosen by whoever created the token, so strip terminal control characters."""
-    return "".join(char if char.isprintable() else "?" for char in text)
-
-
-def usd_suffix(chain, balance):
-    """' (4.63 USD)' for a native coin balance, or '' if the chain has no price source."""
-    try:
-        price = chain.native_price_usd()
-    except Exception as e:
-        return f" (USD unavailable: {e})"
-    if price is None:
-        return ""
-    return f" ({balance * price:,.2f} USD)"
-
-
-def time_ago(timestamp, now):
-    """Describe how long ago a Unix timestamp was, e.g. '12 min ago' or '3 h 5 min ago'."""
-    minutes = max(0, int(now - timestamp)) // 60  # max: a slow local clock could give a negative age
-    if minutes < 1:
-        return "just now"
-    hours, minutes = divmod(minutes, 60)
-    days, hours = divmod(hours, 24)
-    if days:
-        return f"{days} d {hours} h ago" if hours else f"{days} d ago"
-    if hours:
-        return f"{hours} h {minutes} min ago" if minutes else f"{hours} h ago"
-    return f"{minutes} min ago"
-
-
 def show_assets(chain, address, options):
     if "token" in options and "list" in options:
         fail("use either list= or token=, not both")
+    numbers = parse_list(options["list"], len(load_tokens(chain))) if "list" in options else None
+    result = get_assets(chain, address, numbers=numbers, contract=options.get("token"))
 
-    if "token" in options:
-        contract = options["token"]
-        if not chain.is_valid_address(contract):
-            fail(f"invalid token contract: {contract}")
-        try:
-            symbol, decimals = chain.token_info(contract)
-        except Exception as e:
-            fail(f"could not read token contract: {e}")
-        selected = [(None, Token(safe_text(symbol), decimals, contract))]
-    else:
-        try:
-            tokens = chain.load_tokens()
-        except ConfigError as e:
-            fail(str(e))
-        numbers = parse_list(options["list"], len(tokens)) if "list" in options else range(1, len(tokens) + 1)
-        selected = [(n, tokens[n - 1]) for n in numbers]
-
-    print(f"Chain:   {chain.name}")
+    print(f"Chain:   {result['chain_name']}")
     print(f"Address: {address}")
-    width = max(len(t.symbol) for _, t in selected)
-    for number, token in selected:
-        label = f"{number:>3}. " if number is not None else "     "
-        try:
-            balance = chain.balance(address, token)
-            amount = f"{balance.normalize():f}"
-            if token.contract is None:
-                amount += usd_suffix(chain, balance)
-        except Exception as e:
-            amount = f"error: {e}"
-        print(f"{label}{token.symbol:<{width}}  {amount}")
+    balances = result["balances"]
+    width = max(len(entry["symbol"]) for entry in balances)
+    for entry in balances:
+        label = f"{entry['number']:>3}. " if entry["number"] is not None else "     "
+        if entry["error"]:
+            amount = f"error: {entry['error']}"
+        else:
+            amount = entry["amount"]
+            if entry["usd_error"]:
+                amount += f" (USD unavailable: {entry['usd_error']})"
+            elif entry["usd"] is not None:
+                amount += f" ({Decimal(entry['usd']):,.2f} USD)"
+        print(f"{label}{entry['symbol']:<{width}}  {amount}")
 
 
 def show_history(chain, address, options):
     for option in ("list", "token"):
         if option in options:
             fail(f"{option}= only works with mode=default")
-    view = parse_view(options["view"]) if "view" in options else DEFAULT_VIEW
+    result = get_history(chain, address, parse_view(options["view"]) if "view" in options else DEFAULT_VIEW)
 
-    try:
-        transactions, finished = chain.history(address, view)
-    except (ConfigError, HistoryUnavailable) as e:
-        fail(str(e))
-    except Exception as e:
-        fail(f"could not fetch transaction history: {e}")
-
-    print(f"Chain:   {chain.name}")
+    print(f"Chain:   {result['chain_name']}")
     print(f"Address: {address}")
-    unfinished_note = "Stopped searching to limit requests, so older transactions may exist."
+    transactions = result["transactions"]
     if not transactions:
-        print("No transactions found." if finished else f"No transactions found. {unfinished_note}")
+        print("No transactions found." if result["finished"] else f"No transactions found. {result['note']}")
         return
     print(f"Latest {len(transactions)} transactions (times in UTC):")
 
-    rows = [
-        (f"{tx.amount.normalize():f}" if tx.amount is not None else "", safe_text(tx.kind))
-        for tx in transactions
-    ]
-    amount_width = max(len(amount) for amount, _ in rows)
-    kind_width = max(len(kind) for _, kind in rows)
-    now = time.time()
-    ages = [f"({time_ago(tx.timestamp, now)})" for tx in transactions]
+    amounts = [tx["amount"] or "" for tx in transactions]
+    amount_width = max(len(amount) for amount in amounts)
+    kind_width = max(len(tx["kind"]) for tx in transactions)
+    ages = [f"({tx['age']})" for tx in transactions]
     age_width = max(len(age) for age in ages)
-    for number, (tx, (amount, kind), age) in enumerate(zip(transactions, rows, ages), 1):
-        when = datetime.fromtimestamp(tx.timestamp, timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-        when = f"{when} {age:<{age_width}}"
-        preposition = "from" if tx.direction == "IN" else "to"
-        party = f"{preposition} {tx.counterparty}" if tx.counterparty else ""
-        flags = "  FAILED" if not tx.success else ""
-        print(f"{number:>3}. {when}  {tx.direction:<4} {amount:>{amount_width}}  {kind:<{kind_width}}  {party}{flags}")
-        print(f"     {chain.tx_url(tx.tx_id)}")
+    for number, (tx, amount, age) in enumerate(zip(transactions, amounts, ages), 1):
+        when = f"{tx['time_utc']} {age:<{age_width}}"
+        preposition = "from" if tx["direction"] == "IN" else "to"
+        party = f"{preposition} {tx['counterparty']}" if tx["counterparty"] else ""
+        flags = "  FAILED" if not tx["success"] else ""
+        print(f"{number:>3}. {when}  {tx['direction']:<4} {amount:>{amount_width}}  {tx['kind']:<{kind_width}}  {party}{flags}")
+        print(f"     {tx['url']}")
 
-    if not finished:
-        print(f"\n{unfinished_note}")
+    if not result["finished"]:
+        print(f"\n{result['note']}")
 
 
 def main():
@@ -195,26 +125,17 @@ def main():
     if mode == "default" and "view" in options:
         fail("view= only works with mode=history")
 
-    chain = None
-    if "chain" in options:
-        chain_key = options["chain"].lower()
-        chain = CHAINS.get(chain_key)
-        if chain is None:
-            fail(f"unknown chain '{chain_key}'. Supported: {', '.join(CHAINS)}")
-
-    if address is None:
-        address = input(f"Enter {chain.name if chain else 'wallet'} address: ").strip()
-    if chain is None:
-        chain = detect_chain(address)
-        if chain is None:
-            fail(f"not a valid address on any supported chain ({', '.join(CHAINS)}): {address}")
-    if not chain.is_valid_address(address):
-        fail(f"invalid {chain.name} address: {address}")
-
-    if mode == "history":
-        show_history(chain, address, options)
-    else:
-        show_assets(chain, address, options)
+    try:
+        chain = get_chain(options["chain"]) if "chain" in options else None
+        if address is None:
+            address = input(f"Enter {chain.name if chain else 'wallet'} address: ").strip()
+        chain = resolve_chain(address, chain)
+        if mode == "history":
+            show_history(chain, address, options)
+        else:
+            show_assets(chain, address, options)
+    except ScanError as e:
+        fail(str(e))
 
 
 if __name__ == "__main__":

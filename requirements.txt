@@ -1,0 +1,2 @@
+# Only the web app needs these; scan.py runs on the standard library alone.
+fastapi>=0.115
