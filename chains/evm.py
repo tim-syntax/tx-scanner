@@ -146,7 +146,8 @@ class EvmChain(Chain):
         if not api_key or api_key == NODEREAL_KEY_PLACEHOLDER:
             raise HistoryUnavailable(
                 f"transaction history on {self.name} needs a NodeReal API key. "
-                f"Add {NODEREAL_KEY_NAME}=<your key> to the .env file."
+                f"Set {NODEREAL_KEY_NAME} in the .env file, or as an environment variable "
+                f"(on Vercel: Project Settings > Environment Variables)."
             )
         rules = self.history_token_rules()
         sources = [

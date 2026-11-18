@@ -6,9 +6,47 @@ It shows the native coin (BNB, TRX) and any tokens you list, such as USDT and US
 
 The chain is detected from the address: `0x...` is BSC and `T...` is Tron.
 
+You can use it two ways: a **web app** (below) or the **command line** (`scan.py`, see Usage).
+
+## Web app
+
+The web app does everything the command line does, in a page: enter an address, pick tokens, and switch between **Balances** and **History**. The chain is detected as you type. Each check is saved in the page's URL, so you can bookmark or share it, e.g. `/?address=TYourAddress&mode=history&view=20`.
+
+### Run it locally
+
+Needs Python 3.8 or newer.
+
+```bash
+pip install -r requirements-dev.txt
+uvicorn api.index:app --reload
+```
+
+Then open http://127.0.0.1:8000. The API reads `NODEREAL_API_KEY` from `.env`, the same as the command line. Its endpoints are listed at http://127.0.0.1:8000/api/docs.
+
+### Deploy to Vercel
+
+1. Push the repository to GitHub and import it at [vercel.com/new](https://vercel.com/new). Leave the framework preset as **Other**; no build settings are needed.
+2. In **Project Settings > Environment Variables**, add `NODEREAL_API_KEY` (only needed for BSC history).
+3. Deploy. [`vercel.json`](vercel.json) sends every request to [`api/index.py`](api/index.py), which serves both the page and the API.
+
+Things to know:
+- **Anyone with the link can use it**, and every BSC history check spends your NodeReal quota (see Transaction history below). Keep the URL private, or turn on [Vercel's deployment protection](https://vercel.com/docs/security/deployment-protection).
+- Each request may run for up to 60 seconds (`maxDuration` in `vercel.json`). A history check with many filtered rows can come close to that; if it times out, ask for fewer transactions.
+
+### API
+
+| Endpoint | Parameters | Returns |
+|----------|------------|---------|
+| `GET /api/chains` | | Supported chains and their token lists |
+| `GET /api/detect` | `address` | The chain an address belongs to, or `null` |
+| `GET /api/balances` | `address`, optional `chain`, `tokens=1,3,4` or `token=<contract>` | Balances, with USD for the native coin |
+| `GET /api/history` | `address`, optional `chain`, `view` (1-200, default 10) | Latest transactions, newest first |
+
+Errors come back as `{"detail": "message"}`: status 400 for a bad request, 502 when a node or API fails.
+
 ## Requirements
 
-- Python 3.7 or newer
+- Python 3.7 or newer (3.8 or newer for the web app)
 - Optional: [`certifi`](https://pypi.org/project/certifi/). Only needed if you get SSL certificate errors (see Troubleshooting).
 
 ## Usage
@@ -103,7 +141,9 @@ Latest 10 transactions (times in UTC):
 - It lists BNB transfers (including BNB moved by smart contracts), BEP20 transfers and other contract calls.
 - Each check uses at least 6 NodeReal calls, and more if many rows are filtered out. On the free plan, that's at most about 220 checks a day, based on NodeReal's published prices.
 
-To set up the key, copy `.env.example` to `.env` and fill in your key. Git ignores `.env`, so create it on each computer you use:
+To set up the key, copy `.env.example` to `.env` and fill in your key. Git ignores `.env`, so create it on each computer you use. (On Vercel, set it as an environment variable instead; see Deploy to Vercel.)
+
+The `.env` file contains one line:
 
 ```
 NODEREAL_API_KEY=your_key
@@ -143,6 +183,13 @@ Each chain has its own token list in [`tokens/`](tokens/): [`tokens/bsc.json`](t
 
 ```
 scan.py            command-line entry point
+scanner.py         checks shared by the command line and the web app
+api/
+  index.py         web app: serves the page and the JSON API (FastAPI)
+web/
+  index.html       the page (plain HTML/JS, no build step)
+vercel.json        Vercel deployment settings
+requirements.txt   web app dependencies (the command line needs none)
 chains/
   __init__.py      chain registry (CHAINS) - add new chains here
   base.py          Chain interface + token list loading
